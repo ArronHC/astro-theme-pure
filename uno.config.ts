@@ -10,7 +10,6 @@ const fgMuted = 'hsl(var(--muted-foreground) / var(--un-text-opacity, 1))'
 const bgMuted = 'hsl(var(--muted) / var(--un-bg-opacity, 1))'
 const border = 'hsl(var(--border) / 1)'
 const accent = 'hsl(var(--accent) / 1)'
-const accentFg = 'hsl(var(--accent-foreground) / 1)'
 
 const typographyConfig = {
   cssExtend: {
@@ -321,12 +320,6 @@ const typographyConfig = {
       'opacity': '0.7'
     },
     
-    // 或者你想要完全相同的背景色，使用这个：
-    '.callout-content': {
-      'padding': '12px 16px',
-      'margin': '0'
-    },
-    
     // 为不同类型的 callout 设置统一背景
     '.callout.note': {
       'background-color': '#3b82f61a',
@@ -446,7 +439,7 @@ const typographyConfig = {
       'position': 'relative',
       'z-index': '2'
     }
-  }
+  } as const
 }
 
 // 扩展主题颜色，确保更好的对比度
