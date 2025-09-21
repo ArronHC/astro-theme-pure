@@ -4,7 +4,7 @@ description: LaTeX，最好用的数学排版工具
 tags: 
 - 笔记
 - Markdown
-publishDate: 2025-09-02 18:11:51
+publishDate: 2025-09-03 18:11:51
 heroImage: { src: 'https://picx.zhimg.com/v2-2e9b7ef09c2c67fbd3c9a30b9a764a79_r.webp?source=172ae18b&consumer=ZHI_MENG', inferSize: true }
 comment: true
 ---

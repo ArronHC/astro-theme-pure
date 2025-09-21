@@ -223,14 +223,14 @@ const typographyConfig = {
       'word-break': 'break-word',
       'overflow-wrap': 'anywhere',
       'font-weight': '500',
-      color: accent,
+      color: 'hsl(var(--accent-h) var(--accent-s) 70%)',
       'text-decoration': 'underline',
       'text-decoration-color': 'hsl(var(--accent) / 0.3)',
       'text-underline-offset': '2px',
       transition: 'all 0.2s ease'
     },
     'a:hover': {
-      color: accentFg,
+      color: 'hsl(var(--accent-h) var(--accent-s) 80%)',
       'text-decoration-color': accent
     },
     'a:focus': {
@@ -420,6 +420,31 @@ const typographyConfig = {
         'background-color': '#7c4dff20',
         'color': '#c4b5fd'
       }
+    },
+    '.card-fade-image': {
+      'position': 'relative',
+      'overflow': 'hidden'
+    },
+    
+    '.card-fade-image::after': {
+      'content': '""',
+      'position': 'absolute',
+      'right': '0',
+      'top': '0',
+      'bottom': '0',
+      'width': '40%',
+      'background-image': 'var(--bg-image)', // 关键：使用CSS变量
+      'background-size': 'cover',
+      'background-position': 'center',
+      'background-repeat': 'no-repeat',
+      'mask': 'linear-gradient(to left, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
+      '-webkit-mask': 'linear-gradient(to left, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
+      'z-index': '1'
+    },
+    
+    '.card-fade-image > *': {
+      'position': 'relative',
+      'z-index': '2'
     }
   }
 }
