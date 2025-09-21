@@ -4,7 +4,7 @@ description: callout，用于在文档中创建醒目、突出的标签块所设
 tags:
 - 笔记
 - Markdown
-heroImage: {src: 'https://img.cdn1.vip/i/68cff9d87a216_1758460376.png', inferSize: true}
+heroImage: {src: 'src\content\pics\callout.png', inferSize: true}
 publishDate: 2025-09-03 18:11:51
 comment: true
 ---
@@ -25,6 +25,7 @@ comment: true
 	- `DANGER / ERROR`: 危险 / 错误
 	- `EXAMPLE` : 示例
 	- `QUOTE / CITE`：引用
+
 >[!note] 注意事项
 > 注意啦！
 
