@@ -439,7 +439,7 @@ const typographyConfig = {
       'position': 'relative',
       'z-index': '2'
     }
-  } as const
+  } as any
 }
 
 // 扩展主题颜色，确保更好的对比度
