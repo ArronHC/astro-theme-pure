@@ -4,6 +4,7 @@ dist/
 
 ### Vercel ###
 .vercel/
+.obsidian/
 
 ### Vim ###
 [._]*.un~
@@ -38,4 +39,5 @@ old_blog
 ignore.*
 bunfig.toml
 /src/content/blog/test.*
+/src/content/blog/模板.md
 /test/
