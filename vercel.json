@@ -1,0 +1,19 @@
+{
+  "headers": [
+    {
+      "source": "/blog/(.*)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/html; charset=utf-8"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/blog/:path*",
+      "destination": "/blog/:path*"
+    }
+  ]
+}
