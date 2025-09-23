@@ -22,7 +22,7 @@ comment: true
 - 发布自己的包到 npm 仓库
 - 运行脚本命令
 npm 随 Node. js 一同安装
-### npm 常用命令
+## npm 常用命令
 ---
 #### 0. 检查版本
 ```bash
@@ -83,7 +83,7 @@ npm update
 npm update <包名>
 
 ```
-### package. json 结构
+## package. json 结构
 ---
 这是项目的配置文件, 结构如下:
 ```json
@@ -135,7 +135,7 @@ npm run start
 npm run test
 npm test # npm run test的缩写
 ```
-### 使用 Node. js 创建项目的基本流程
+## 使用 Node. js 创建项目的基本流程
 #### 1.创建项目目录
 ```bash
 mkdir my-project
