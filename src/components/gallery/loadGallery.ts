@@ -1,6 +1,8 @@
+import type { ImageMetadata } from 'astro'
+
 import type { GalleryItem, GalleryMetadata } from './types'
 
-const IMAGE_GLOB = import.meta.glob(
+const IMAGE_GLOB = import.meta.glob<string | ImageMetadata>(
   '../../assets/gallery/**/*.{jpg,jpeg,png,webp,avif,gif,svg}',
   {
     eager: true,
@@ -21,6 +23,15 @@ const normalizeKey = (value: string) =>
     .replace(/\.[^/.]+$/, '')
 
 const tidy = (raw: string | undefined) => raw?.replace(/[-_]+/g, ' ').trim()
+
+const resolveImageSource = (mod: string | ImageMetadata): string | null => {
+  if (typeof mod === 'string') return mod
+  if (mod && typeof mod === 'object' && 'src' in mod && typeof mod.src === 'string') {
+    return mod.src
+  }
+
+  return null
+}
 
 const decodeSegment = (raw: string) => {
   try {
@@ -74,7 +85,8 @@ export const loadGalleryItems = (): GalleryItem[] => {
   const items: GalleryItem[] = []
 
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
-    const image = typeof mod === 'string' ? mod : (mod as { default: string }).default
+    const image = resolveImageSource(mod)
+    if (!image) continue
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
