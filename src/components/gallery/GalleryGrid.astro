@@ -1,5 +1,4 @@
 ---
-import type { ImageMetadata } from 'astro'
 import type { GalleryItem } from './types'
 
 interface Props {
@@ -7,67 +6,18 @@ interface Props {
 }
 
 const { items } = Astro.props
-
-const siteOrigin = Astro.site?.origin ?? Astro.url?.origin
-
-const normaliseSource = (raw: string): string => {
-  if (!raw) return ''
-  if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:')) {
-    return raw
-  }
-
-  try {
-    return siteOrigin ? new URL(raw, siteOrigin).href : raw
-  } catch {
-    return raw
-  }
-}
-
-interface ResolvedItem extends GalleryItem {
-  source: string
-  metadata: ImageMetadata | null
-}
-
-const resolvedItems: ResolvedItem[] = items
-  .map((item) => {
-    if (typeof item.image === 'string') {
-      return {
-        ...item,
-        source: normaliseSource(item.image),
-        metadata: null
-      }
-    }
-
-    const source = normaliseSource(item.image?.src ?? '')
-
-    return {
-      ...item,
-      source,
-      metadata: item.image ?? null
-    }
-  })
-  .filter((item) => Boolean(item.source))
 ---
 
 <div class='gallery-grid'>
-  {resolvedItems.map((item) => (
+  {items.map((item) => (
     <figure class='gallery-card'>
-      <a
-        class='gallery-link'
-        href={item.source}
-        target='_blank'
-        rel='noopener noreferrer'
-      >
-        <img
-          loading='lazy'
-          decoding='async'
-          src={item.source}
-          alt={item.title || 'Gallery photo'}
-          class='gallery-image'
-          width={item.metadata?.width ?? undefined}
-          height={item.metadata?.height ?? undefined}
-        />
-      </a>
+      <img
+        loading='lazy'
+        decoding='async'
+        src={item.image}
+        alt={item.title || 'Gallery photo'}
+        class='gallery-image'
+      />
       {(item.title || item.subtitle || item.description) && (
         <figcaption class='gallery-caption'>
           {item.subtitle && <span class='gallery-subtitle'>{item.subtitle}</span>}
@@ -111,10 +61,6 @@ const resolvedItems: ResolvedItem[] = items
     border-color: rgba(255, 255, 255, 0.16);
     background: rgba(15, 23, 42, 0.35);
     box-shadow: 0 40px 110px -60px rgba(8, 16, 32, 0.7);
-  }
-
-  .gallery-link {
-    display: block;
   }
 
   .gallery-image {

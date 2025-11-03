@@ -1,10 +1,6 @@
-import type { ImageMetadata } from 'astro'
-
-export type GalleryImageSource = ImageMetadata | string
-
 export interface GalleryItem {
-  /** Public URL or metadata for the image asset. */
-  image: GalleryImageSource
+  /** Public URL for the image asset. */
+  image: string
   /** Optional title shown beneath the photo. */
   title?: string
   /** Optional small label rendered before the title. */
