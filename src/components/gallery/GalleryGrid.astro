@@ -6,18 +6,38 @@ interface Props {
 }
 
 const { items } = Astro.props
+
+const normalizedItems = items.map((item) => {
+  const orientation =
+    item.layout ??
+    (item.width && item.height
+      ? item.width >= item.height
+        ? 'landscape'
+        : 'portrait'
+      : 'landscape')
+
+  return { ...item, orientation }
+})
 ---
 
 <div class='gallery-grid'>
-  {items.map((item) => (
-    <figure class='gallery-card'>
-      <img
-        loading='lazy'
-        decoding='async'
-        src={item.image}
-        alt={item.title || 'Gallery photo'}
-        class='gallery-image'
-      />
+  {normalizedItems.map((item) => (
+    <figure class={`gallery-card ${item.orientation === 'landscape' ? 'is-landscape' : 'is-portrait'}`}>
+      <a
+        class='gallery-link'
+        href={item.image}
+        target='_blank'
+        rel='noopener noreferrer'
+        aria-label={`查看 ${item.title ?? '图片'} 的原图`}
+      >
+        <img
+          loading='lazy'
+          decoding='async'
+          src={item.image}
+          alt={item.title || 'Gallery photo'}
+          class={`gallery-image ${item.orientation === 'landscape' ? 'is-landscape' : 'is-portrait'}`}
+        />
+      </a>
       {(item.title || item.subtitle || item.description) && (
         <figcaption class='gallery-caption'>
           {item.subtitle && <span class='gallery-subtitle'>{item.subtitle}</span>}
@@ -52,6 +72,16 @@ const { items } = Astro.props
     transition: transform 500ms ease, box-shadow 500ms ease;
   }
 
+  .gallery-card.is-landscape {
+    grid-column: span 1;
+  }
+
+  @media (min-width: 640px) {
+    .gallery-card.is-landscape {
+      grid-column: span 2;
+    }
+  }
+
   .gallery-card:hover {
     transform: translateY(-6px);
     box-shadow: 0 40px 100px -55px rgba(15, 23, 42, 0.6);
@@ -63,12 +93,23 @@ const { items } = Astro.props
     box-shadow: 0 40px 110px -60px rgba(8, 16, 32, 0.7);
   }
 
+  .gallery-link {
+    display: block;
+  }
+
   .gallery-image {
     width: 100%;
     height: 100%;
     display: block;
     object-fit: cover;
+  }
+
+  .gallery-image.is-portrait {
     aspect-ratio: 4 / 5;
+  }
+
+  .gallery-image.is-landscape {
+    aspect-ratio: 3 / 2;
   }
 
   .gallery-caption {
