@@ -1,0 +1,98 @@
+---
+import PageLayout from '@/layouts/CommonPage.astro'
+import GalleryGrid from '@/components/gallery/GalleryGrid.astro'
+import { loadGalleryItems } from '@/components/gallery/loadGallery'
+
+const items = loadGalleryItems()
+const headings = [
+  { depth: 2, slug: 'collection', text: 'Gallery' },
+  { depth: 2, slug: 'care-guide', text: '维护方式 Care guide' }
+]
+---
+
+<PageLayout title='Gallery' {headings} view>
+  <section class='rounded-[32px] border border-white/40 bg-white/70 p-10 shadow-[0_32px_100px_-60px_rgba(15,23,42,0.58)] backdrop-blur-3xl dark:border-white/10 dark:bg-white/5 dark:shadow-[0_44px_130px_-70px_rgba(8,16,32,0.75)]'>
+    <div class='mx-auto max-w-3xl space-y-6 text-center text-balance'>
+      <span class='inline-flex items-center justify-center rounded-full bg-black/85 px-4 py-1 text-xs font-medium uppercase tracking-[0.28em] text-white/85 backdrop-blur-md dark:bg-white/10 dark:text-white'>
+        Gallery · 珍藏
+      </span>
+      <h1 class='text-3xl font-semibold leading-tight text-slate-900 dark:text-white sm:text-[2.1rem]'>
+        一个简单、顺滑的个人图库
+      </h1>
+      <p class='mx-auto max-w-[60ch] text-base leading-relaxed text-muted-foreground sm:text-lg'>
+        把喜欢的照片放进 <code class='rounded-md bg-black/5 px-1.5 py-0.5 text-[0.9em] dark:bg-white/10'>src/assets/gallery/</code>，就能在这里看到它们。所有卡片会自动按文件名的 <code class='rounded-md bg-black/5 px-1.5 py-0.5 text-[0.9em] dark:bg-white/10'>__[数字]</code> 排序，一行两张，顺序一目了然。
+      </p>
+      <div class='grid gap-4 text-left sm:grid-cols-3'>
+        <article class='rounded-3xl border border-white/35 bg-white/75 p-4 text-sm shadow-[0_22px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur-md dark:border-white/10 dark:bg-white/10 dark:shadow-[0_32px_80px_-50px_rgba(8,16,32,0.72)]'>
+          <h2 class='text-sm font-semibold text-slate-900 dark:text-white'>零配置</h2>
+          <p class='mt-2 text-xs leading-relaxed text-muted-foreground dark:text-slate-300'>
+            新增、删除或替换图片都只需要管理文件，部署后页面自动更新。
+          </p>
+        </article>
+        <article class='rounded-3xl border border-white/35 bg-white/75 p-4 text-sm shadow-[0_22px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur-md dark:border-white/10 dark:bg-white/10 dark:shadow-[0_32px_80px_-50px_rgba(8,16,32,0.72)]'>
+          <h2 class='text-sm font-semibold text-slate-900 dark:text-white'>手动排序</h2>
+          <p class='mt-2 text-xs leading-relaxed text-muted-foreground dark:text-slate-300'>
+            在文件名结尾写上 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.85em] dark:bg-white/10'>__01</code>、<code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.85em] dark:bg-white/10'>__02</code> 等数字，就能自定义展示顺序。
+          </p>
+        </article>
+        <article class='rounded-3xl border border-white/35 bg-white/75 p-4 text-sm shadow-[0_22px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur-md dark:border-white/10 dark:bg-white/10 dark:shadow-[0_32px_80px_-50px_rgba(8,16,32,0.72)]'>
+          <h2 class='text-sm font-semibold text-slate-900 dark:text-white'>可选文字</h2>
+          <p class='mt-2 text-xs leading-relaxed text-muted-foreground dark:text-slate-300'>
+            想写标题或备注时，把文件名命名成 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.85em] dark:bg-white/10'>标题__副标题__描述__05</code> 即可自动拆分。
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby='collection' class='mt-16 space-y-6'>
+    <header class='space-y-2 text-center'>
+      <h2 id='collection' class='text-2xl font-semibold text-slate-900 dark:text-white sm:text-3xl'>我的日常瞬间</h2>
+      <p class='text-sm text-muted-foreground sm:text-base'>
+        卡片会按照数字顺序排列；没有数字时会按标题字母顺序显示。
+      </p>
+    </header>
+    {items.length > 0 ? (
+      <GalleryGrid items={items} />
+    ) : (
+      <div class='rounded-3xl border border-dashed border-white/40 bg-white/40 p-10 text-center text-sm text-muted-foreground backdrop-blur-xl dark:border-white/10 dark:bg-white/5'>
+        把照片放进 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.9em] dark:bg-white/10'>src/assets/gallery/</code> 就能在这里看到它们。
+      </div>
+    )}
+  </section>
+
+  <section
+    aria-labelledby='care-guide'
+    class='mt-20 rounded-[32px] border border-white/35 bg-white/70 p-10 shadow-[0_35px_110px_-70px_rgba(15,23,42,0.55)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 dark:shadow-[0_45px_140px_-80px_rgba(8,16,32,0.75)]'
+  >
+    <div class='mx-auto max-w-4xl space-y-8'>
+      <header class='space-y-3 text-center'>
+        <span class='text-xs uppercase tracking-[0.35em] text-muted-foreground'>Care guide</span>
+        <h2 id='care-guide' class='text-2xl font-semibold text-slate-900 dark:text-white sm:text-3xl'>如何维护这本小小图库</h2>
+        <p class='text-sm text-muted-foreground sm:text-base'>
+          三个步骤就能完成更新，无需写一行代码。
+        </p>
+      </header>
+      <div class='grid gap-6 sm:grid-cols-3'>
+        <article class='flex flex-col gap-3 rounded-3xl border border-white/35 bg-white/70 p-6 text-left shadow-[0_24px_70px_-60px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all duration-500 hover:border-white/60 hover:shadow-[0_28px_90px_-65px_rgba(15,23,42,0.6)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_32px_90px_-70px_rgba(8,16,32,0.75)]'>
+          <h3 class='text-lg font-semibold text-slate-900 dark:text-white'>1. 放进文件夹</h3>
+          <p class='text-sm leading-relaxed text-muted-foreground dark:text-slate-300'>
+            把图片文件放入 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.9em] dark:bg-white/10'>src/assets/gallery/</code>，可以是本地静态资源或远程链接。
+          </p>
+        </article>
+        <article class='flex flex-col gap-3 rounded-3xl border border-white/35 bg-white/70 p-6 text-left shadow-[0_24px_70px_-60px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all duration-500 hover:border-white/60 hover:shadow-[0_28px_90px_-65px_rgba(15,23,42,0.6)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_32px_90px_-70px_rgba(8,16,32,0.75)]'>
+          <h3 class='text-lg font-semibold text-slate-900 dark:text-white'>2. 按数字命名</h3>
+          <p class='text-sm leading-relaxed text-muted-foreground dark:text-slate-300'>
+            想自定义顺序时，把文件名写成 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.9em] dark:bg-white/10'>名字__05.jpg</code>，数字越小越靠前。
+          </p>
+        </article>
+        <article class='flex flex-col gap-3 rounded-3xl border border-white/35 bg-white/70 p-6 text-left shadow-[0_24px_70px_-60px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all duration-500 hover:border-white/60 hover:shadow-[0_28px_90px_-65px_rgba(15,23,42,0.6)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_32px_90px_-70px_rgba(8,16,32,0.75)]'>
+          <h3 class='text-lg font-semibold text-slate-900 dark:text-white'>3. 提交并部署</h3>
+          <p class='text-sm leading-relaxed text-muted-foreground dark:text-slate-300'>
+            Git 提交后，Vercel 会重新构建，最新的照片就会出现。
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+</PageLayout>
