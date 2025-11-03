@@ -1,0 +1,40 @@
+---
+import type { MarkdownHeading } from 'astro'
+
+interface Props {
+  headings?: MarkdownHeading[]
+  class?: string
+  id?: string
+  title?: string
+}
+
+const {
+  headings = [],
+  class: className,
+  id,
+  title = 'TABLE OF CONTENTS',
+  ...rest
+} = Astro.props as Props
+
+const filteredHeadings = headings.filter((heading) => heading?.slug)
+---
+{filteredHeadings.length > 0 && (
+  <nav class:list={[className, 'space-y-4']} id={id} {...rest}>
+    <h2 class='text-sm font-semibold tracking-[0.2em] text-muted-foreground'>
+      {title}
+    </h2>
+    <ul class='space-y-2 text-sm text-card-foreground'>
+      {filteredHeadings.map((heading) => (
+        <li class:list={[`depth-${heading.depth}`, 'flex items-start gap-3']}>
+          <span class='mt-1 h-2 w-2 rounded-full bg-muted opacity-60' aria-hidden='true' />
+          <a
+            class='flex-1 leading-relaxed text-muted-foreground transition-colors duration-200 hover:text-foreground'
+            href={`#${heading.slug}`}
+          >
+            {heading.text}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+)}
