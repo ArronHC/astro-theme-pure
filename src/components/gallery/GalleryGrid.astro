@@ -1,6 +1,4 @@
 ---
-import { Image } from 'astro:assets'
-import type { ImageMetadata } from 'astro'
 import type { GalleryItem } from './types'
 
 interface Props {
@@ -8,80 +6,18 @@ interface Props {
 }
 
 const { items } = Astro.props
-
-const pageURL = Astro.url ?? Astro.site ?? null
-
-const normaliseSource = (raw: string): string => {
-  if (!raw) return ''
-  if (/^(?:[a-z][a-z+\-.]*:)?\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:')) {
-    return raw
-  }
-
-  if (pageURL) {
-    try {
-      return new URL(raw, pageURL).pathname
-    } catch {
-      return raw
-    }
-  }
-
-  return raw
-}
-
-interface ResolvedItem extends GalleryItem {
-  source: string
-  metadata: ImageMetadata | null
-}
-
-const resolvedItems: ResolvedItem[] = items
-  .map((item) => {
-    if (typeof item.image === 'string') {
-      return {
-        ...item,
-        source: normaliseSource(item.image),
-        metadata: null
-      }
-    }
-
-    const metadata = item.image ?? null
-    const source = normaliseSource(metadata?.src ?? '')
-
-    return {
-      ...item,
-      source,
-      metadata
-    }
-  })
-  .filter((item) => Boolean(item.source))
 ---
 
 <div class='gallery-grid'>
-  {resolvedItems.map((item) => (
+  {items.map((item) => (
     <figure class='gallery-card'>
-      <a
-        class='gallery-link'
-        href={item.source}
-        target='_blank'
-        rel='noopener noreferrer'
-      >
-        {item.metadata ? (
-          <Image
-            src={item.metadata}
-            loading='lazy'
-            decoding='async'
-            alt={item.title || 'Gallery photo'}
-            class='gallery-image'
-          />
-        ) : (
-          <img
-            loading='lazy'
-            decoding='async'
-            src={item.source}
-            alt={item.title || 'Gallery photo'}
-            class='gallery-image'
-          />
-        )}
-      </a>
+      <img
+        loading='lazy'
+        decoding='async'
+        src={item.image}
+        alt={item.title || 'Gallery photo'}
+        class='gallery-image'
+      />
       {(item.title || item.subtitle || item.description) && (
         <figcaption class='gallery-caption'>
           {item.subtitle && <span class='gallery-subtitle'>{item.subtitle}</span>}
@@ -125,10 +61,6 @@ const resolvedItems: ResolvedItem[] = items
     border-color: rgba(255, 255, 255, 0.16);
     background: rgba(15, 23, 42, 0.35);
     box-shadow: 0 40px 110px -60px rgba(8, 16, 32, 0.7);
-  }
-
-  .gallery-link {
-    display: block;
   }
 
   .gallery-image {
