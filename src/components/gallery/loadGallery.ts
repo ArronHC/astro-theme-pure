@@ -87,29 +87,33 @@ export const loadGalleryItems = (): GalleryItem[] => {
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
     const image = resolveImageSource(mod)
     if (!image) continue
+    const imageData: Pick<ImageMetadata, 'src'> & Partial<ImageMetadata> =
+      mod && typeof mod === 'object' && 'src' in mod
+        ? (mod as ImageMetadata)
+        : { src: image }
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
     const metadata = metadataMap.get(key)
 
-    const title = metadata.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
-    const width = metadata.width ?? imageData.width
-    const height = metadata.height ?? imageData.height
+    const title = metadata?.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
+    const width = metadata?.width ?? imageData.width
+    const height = metadata?.height ?? imageData.height
     const layout =
-      metadata.layout ??
+      metadata?.layout ??
       (width && height ? (width >= height ? 'landscape' : 'portrait') : undefined)
 
     items.push({
       image: imageData.src,
       title,
-      subtitle: metadata.subtitle ?? fileParts.subtitle,
-      description: metadata.description ?? fileParts.description,
-      palette: metadata.palette,
-      mood: metadata.mood,
+      subtitle: metadata?.subtitle ?? fileParts.subtitle,
+      description: metadata?.description ?? fileParts.description,
+      palette: metadata?.palette,
+      mood: metadata?.mood,
       layout,
       width,
       height,
-      order: metadata.order ?? fileParts.order
+      order: metadata?.order ?? fileParts.order
     })
   }
 
