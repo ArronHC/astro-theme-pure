@@ -13,6 +13,10 @@ export interface GalleryItem {
   mood?: string
   /** Layout hint retained for legacy data. */
   layout?: 'portrait' | 'landscape'
+  /** Resolved width of the image asset. */
+  width?: number
+  /** Resolved height of the image asset. */
+  height?: number
   /** Ordering weight derived from the file name or metadata. Smaller numbers render first. */
   order?: number
 }

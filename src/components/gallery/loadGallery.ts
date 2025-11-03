@@ -93,15 +93,22 @@ export const loadGalleryItems = (): GalleryItem[] => {
     const metadata = metadataMap.get(key) ?? {}
 
     const title = metadata.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
+    const width = metadata.width ?? imageData.width
+    const height = metadata.height ?? imageData.height
+    const layout =
+      metadata.layout ??
+      (width && height ? (width >= height ? 'landscape' : 'portrait') : undefined)
 
     items.push({
-      image,
+      image: imageData.src,
       title,
       subtitle: metadata.subtitle ?? fileParts.subtitle,
       description: metadata.description ?? fileParts.description,
       palette: metadata.palette,
       mood: metadata.mood,
-      layout: metadata.layout,
+      layout,
+      width,
+      height,
       order: metadata.order ?? fileParts.order
     })
   }
