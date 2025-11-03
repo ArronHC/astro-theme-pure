@@ -1,157 +1,40 @@
 ---
 import type { MarkdownHeading } from 'astro'
 
-import TOCHeading from 'astro-pure/components/pages/TOCHeading.astro'
-import { generateToc } from 'astro-pure/plugins/toc'
-
 interface Props {
   headings?: MarkdownHeading[]
   class?: string
   id?: string
+  title?: string
 }
 
-const { headings = [], class: className, ...props } = Astro.props as Props
+const {
+  headings = [],
+  class: className,
+  id,
+  title = 'TABLE OF CONTENTS',
+  ...rest
+} = Astro.props as Props
 
-const toc = generateToc(headings)
+const filteredHeadings = headings.filter((heading) => heading?.slug)
 ---
-
-{toc.length > 0 && (
-  <toc-heading class={className} {...props}>
-    <h2 class='font-semibold'>TABLE OF CONTENTS</h2>
-    <ul class='mt-4 text-card-foreground'>
-      {toc.map((heading) => (
-        <TOCHeading heading={heading} />
+{filteredHeadings.length > 0 && (
+  <nav class:list={[className, 'space-y-4']} id={id} {...rest}>
+    <h2 class='text-sm font-semibold tracking-[0.2em] text-muted-foreground'>
+      {title}
+    </h2>
+    <ul class='space-y-2 text-sm text-card-foreground'>
+      {filteredHeadings.map((heading) => (
+        <li class:list={[`depth-${heading.depth}`, 'flex items-start gap-3']} key={heading.slug}>
+          <span class='mt-1 h-2 w-2 rounded-full bg-muted opacity-60' aria-hidden='true' />
+          <a
+            class='flex-1 leading-relaxed text-muted-foreground transition-colors duration-200 hover:text-foreground'
+            href={`#${heading.slug}`}
+          >
+            {heading.text}
+          </a>
+        </li>
       ))}
     </ul>
-  </toc-heading>
+  </nav>
 )}
-
-<script>
-  interface TOCLink {
-    element: HTMLAnchorElement
-    progressBar?: HTMLElement | null
-    slug: string
-  }
-
-  interface HeadingProgress {
-    inView: boolean
-    progress: number
-  }
-
-  class GalleryTOC extends HTMLElement {
-    headings: HTMLElement[] = []
-    tocLinks: TOCLink[] = []
-    headingProgress: Record<string, HeadingProgress> = {}
-    intervalId?: number
-
-    constructor() {
-      super()
-
-      this.headings = Array.from(
-        document.querySelectorAll('article h2, article h3, article h4, article h5, article h6')
-      ).filter((el): el is HTMLElement => el instanceof HTMLElement && !!el.id)
-
-      this.tocLinks = Array.from(this.querySelectorAll('a[href^="#"]'))
-        .map((link) => ({
-          element: link as HTMLAnchorElement,
-          progressBar: link.previousElementSibling as HTMLElement | null,
-          slug: (link.getAttribute('href') || '').substring(1)
-        }))
-        .filter(({ slug }) => !!slug)
-    }
-
-    updatePositionAndStyle = () => {
-      const content = document.querySelector('#content') as HTMLElement | null
-      if (!content) return
-
-      const windowHeight = window.innerHeight
-      const pageOffset = window.scrollY - (content.offsetTop || 0)
-      const postOffset = (content.offsetHeight || 0) + 127
-
-      this.headingProgress = {}
-
-      this.headings.forEach((el, index) => {
-        const id = el.id
-        if (!id) return
-
-        const nextHeadingTop = this.headings[index + 1]?.offsetTop ?? postOffset
-        const rangeStart = el.offsetTop - pageOffset
-        const rangeEnd = nextHeadingTop - pageOffset - el.offsetHeight
-        const rangeDelta = rangeEnd - rangeStart
-        const rawProgress = rangeDelta === 0 ? 1 : (windowHeight - rangeStart) / rangeDelta
-
-        this.headingProgress[id] = {
-          inView: rangeStart < windowHeight && rangeEnd > 0,
-          progress: Math.max(0, Math.min(1, rawProgress))
-        }
-      })
-
-      this.tocLinks.forEach(({ element, progressBar, slug }, i) => {
-        const state = this.headingProgress[slug]
-
-        if (!state) {
-          element.classList.remove('highlight', 'highlight-bg-translucent', 'rounded-t-2xl', 'rounded-b-2xl')
-          progressBar?.classList.remove('is-read', 'highlight-bg')
-          progressBar?.style.removeProperty('height')
-          return
-        }
-
-        const { inView, progress } = state
-
-        element.classList.toggle('highlight', inView)
-        element.classList.toggle('highlight-bg-translucent', inView)
-
-        const previousSlug = this.tocLinks[i - 1]?.slug
-        const nextSlug = this.tocLinks[i + 1]?.slug
-        const previousInView = previousSlug ? this.headingProgress[previousSlug]?.inView : undefined
-        const nextInView = nextSlug ? this.headingProgress[nextSlug]?.inView : undefined
-
-        element.classList.toggle('rounded-t-2xl', inView && (i === 0 || previousInView !== true))
-        element.classList.toggle(
-          'rounded-b-2xl',
-          inView && (i === this.tocLinks.length - 1 || nextInView !== true)
-        )
-        progressBar?.classList.toggle('is-read', !inView && progress === 1)
-        progressBar?.classList.toggle('highlight-bg', inView)
-        progressBar?.style.setProperty('height', `${progress * 90}%`)
-      })
-    }
-
-    connectedCallback() {
-      this.tocLinks.forEach((link) => {
-        link.element.addEventListener('click', (event) => {
-          event.preventDefault()
-          const directHeading = this.headings.find((heading) => heading.id === link.slug)
-          if (!directHeading) {
-            console.warn(`No heading found for slug: ${link.slug}`)
-            return
-          }
-
-          history.pushState(null, directHeading.textContent || '', `#${link.slug}`)
-          directHeading.scrollIntoView({ behavior: 'smooth' })
-        })
-      })
-
-      this.updatePositionAndStyle()
-      this.intervalId = window.setInterval(this.updatePositionAndStyle, 100)
-      window.addEventListener('scroll', this.updatePositionAndStyle)
-    }
-
-    disconnectedCallback() {
-      if (this.intervalId) {
-        window.clearInterval(this.intervalId)
-      }
-      window.removeEventListener('scroll', this.updatePositionAndStyle)
-    }
-  }
-
-  if (!customElements.get('toc-heading')) {
-    customElements.define('toc-heading', GalleryTOC)
-  }
-</script>
-
-<style>
-  toc-heading :global(.toc-item) {
-    display: flow-root;
-  }
-</style>
