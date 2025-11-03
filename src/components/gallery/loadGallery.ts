@@ -1,6 +1,8 @@
+import type { ImageMetadata } from 'astro'
+
 import type { GalleryItem, GalleryMetadata } from './types'
 
-const IMAGE_GLOB = import.meta.glob(
+const IMAGE_GLOB = import.meta.glob<string | ImageMetadata>(
   '../../assets/gallery/**/*.{jpg,jpeg,png,webp,avif,gif,svg}',
   {
     eager: true,
@@ -21,6 +23,31 @@ const normalizeKey = (value: string) =>
     .replace(/\.[^/.]+$/, '')
 
 const tidy = (raw: string | undefined) => raw?.replace(/[-_]+/g, ' ').trim()
+
+interface ResolvedImageData {
+  src: string
+  width?: number
+  height?: number
+}
+
+const resolveImageData = (mod: string | ImageMetadata): ResolvedImageData | null => {
+  if (typeof mod === 'string') {
+    return { src: mod }
+  }
+
+  if (mod && typeof mod === 'object' && 'src' in mod && typeof mod.src === 'string') {
+    const width = typeof mod.width === 'number' ? mod.width : undefined
+    const height = typeof mod.height === 'number' ? mod.height : undefined
+
+    return {
+      src: mod.src,
+      width,
+      height
+    }
+  }
+
+  return null
+}
 
 const decodeSegment = (raw: string) => {
   try {
@@ -74,22 +101,30 @@ export const loadGalleryItems = (): GalleryItem[] => {
   const items: GalleryItem[] = []
 
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
-    const image = typeof mod === 'string' ? mod : (mod as { default: string }).default
+    const imageData = resolveImageData(mod)
+    if (!imageData) continue
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
     const metadata = metadataMap.get(key) ?? {}
 
     const title = metadata.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
+    const width = metadata.width ?? imageData.width
+    const height = metadata.height ?? imageData.height
+    const layout =
+      metadata.layout ??
+      (width && height ? (width >= height ? 'landscape' : 'portrait') : undefined)
 
     items.push({
-      image,
+      image: imageData.src,
       title,
       subtitle: metadata.subtitle ?? fileParts.subtitle,
       description: metadata.description ?? fileParts.description,
       palette: metadata.palette,
       mood: metadata.mood,
-      layout: metadata.layout,
+      layout,
+      width,
+      height,
       order: metadata.order ?? fileParts.order
     })
   }
