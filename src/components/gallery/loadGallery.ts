@@ -90,7 +90,7 @@ export const loadGalleryItems = (): GalleryItem[] => {
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
-    const metadata = metadataMap.get(key) ?? {}
+    const metadata = metadataMap.get(key)
 
     const title = metadata.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
     const width = metadata.width ?? imageData.width
