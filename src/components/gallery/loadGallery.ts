@@ -24,26 +24,10 @@ const normalizeKey = (value: string) =>
 
 const tidy = (raw: string | undefined) => raw?.replace(/[-_]+/g, ' ').trim()
 
-interface ResolvedImageData {
-  src: string
-  width?: number
-  height?: number
-}
-
-const resolveImageData = (mod: string | ImageMetadata): ResolvedImageData | null => {
-  if (typeof mod === 'string') {
-    return { src: mod }
-  }
-
+const resolveImageSource = (mod: string | ImageMetadata): string | null => {
+  if (typeof mod === 'string') return mod
   if (mod && typeof mod === 'object' && 'src' in mod && typeof mod.src === 'string') {
-    const width = typeof mod.width === 'number' ? mod.width : undefined
-    const height = typeof mod.height === 'number' ? mod.height : undefined
-
-    return {
-      src: mod.src,
-      width,
-      height
-    }
+    return mod.src
   }
 
   return null
@@ -101,37 +85,31 @@ export const loadGalleryItems = (): GalleryItem[] => {
   const items: GalleryItem[] = []
 
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
-    const resolved = resolveImageData(mod)
-    if (!resolved) continue
-
-    const {
-      src: resolvedSrc,
-      width: intrinsicWidth,
-      height: intrinsicHeight
-    } = resolved
+    const image = resolveImageSource(mod)
+    if (!image) continue
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
     const metadata = metadataMap.get(key)
 
-    const title = metadata?.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
-    const width = metadata?.width ?? intrinsicWidth
-    const height = metadata?.height ?? intrinsicHeight
+    const title = metadata.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
+    const width = metadata.width ?? imageData.width
+    const height = metadata.height ?? imageData.height
     const layout =
-      metadata?.layout ??
+      metadata.layout ??
       (width && height ? (width >= height ? 'landscape' : 'portrait') : undefined)
 
     items.push({
-      image: resolvedSrc,
+      image: imageData.src,
       title,
-      subtitle: metadata?.subtitle ?? fileParts.subtitle,
-      description: metadata?.description ?? fileParts.description,
-      palette: metadata?.palette,
-      mood: metadata?.mood,
+      subtitle: metadata.subtitle ?? fileParts.subtitle,
+      description: metadata.description ?? fileParts.description,
+      palette: metadata.palette,
+      mood: metadata.mood,
       layout,
       width,
       height,
-      order: metadata?.order ?? fileParts.order
+      order: metadata.order ?? fileParts.order
     })
   }
 
