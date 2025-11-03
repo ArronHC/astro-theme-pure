@@ -24,26 +24,10 @@ const normalizeKey = (value: string) =>
 
 const tidy = (raw: string | undefined) => raw?.replace(/[-_]+/g, ' ').trim()
 
-interface ResolvedImageData {
-  src: string
-  width?: number
-  height?: number
-}
-
-const resolveImageData = (mod: string | ImageMetadata): ResolvedImageData | null => {
-  if (typeof mod === 'string') {
-    return { src: mod }
-  }
-
+const resolveImageSource = (mod: string | ImageMetadata): string | null => {
+  if (typeof mod === 'string') return mod
   if (mod && typeof mod === 'object' && 'src' in mod && typeof mod.src === 'string') {
-    const width = typeof mod.width === 'number' ? mod.width : undefined
-    const height = typeof mod.height === 'number' ? mod.height : undefined
-
-    return {
-      src: mod.src,
-      width,
-      height
-    }
+    return mod.src
   }
 
   return null
@@ -101,8 +85,8 @@ export const loadGalleryItems = (): GalleryItem[] => {
   const items: GalleryItem[] = []
 
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
-    const imageData = resolveImageData(mod)
-    if (!imageData) continue
+    const image = resolveImageSource(mod)
+    if (!image) continue
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
