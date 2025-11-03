@@ -1,5 +1,6 @@
 ---
 import { Image } from 'astro:assets'
+import type { ImageMetadata } from 'astro'
 import type { GalleryItem } from './types'
 
 interface Props {
@@ -8,11 +9,29 @@ interface Props {
 
 const { items } = Astro.props
 
-const resolvedItems = items.map((item) => ({
-  ...item,
-  source: typeof item.image === 'string' ? item.image : item.image.src,
-  isStringSource: typeof item.image === 'string'
-}))
+interface ResolvedItem extends GalleryItem {
+  source: string
+  metadata: ImageMetadata | null
+  isStringSource: boolean
+}
+
+const resolvedItems: ResolvedItem[] = items.map((item) => {
+  if (typeof item.image === 'string') {
+    return {
+      ...item,
+      source: item.image,
+      metadata: null,
+      isStringSource: true
+    }
+  }
+
+  return {
+    ...item,
+    source: item.image.src,
+    metadata: item.image,
+    isStringSource: false
+  }
+})
 ---
 
 <div class='gallery-grid'>
@@ -24,7 +43,7 @@ const resolvedItems = items.map((item) => ({
         target='_blank'
         rel='noopener noreferrer'
       >
-        {item.isStringSource ? (
+        {item.isStringSource || !item.metadata ? (
           <img
             loading='lazy'
             decoding='async'
@@ -38,7 +57,7 @@ const resolvedItems = items.map((item) => ({
             alt={item.title || 'Gallery photo'}
             loading='lazy'
             decoding='async'
-            src={item.image}
+            src={item.metadata}
           />
         )}
       </a>
