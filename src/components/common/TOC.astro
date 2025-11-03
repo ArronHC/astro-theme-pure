@@ -25,7 +25,7 @@ const filteredHeadings = headings.filter((heading) => heading?.slug)
     </h2>
     <ul class='space-y-2 text-sm text-card-foreground'>
       {filteredHeadings.map((heading) => (
-        <li class:list={[`depth-${heading.depth}`, 'flex items-start gap-3']} key={heading.slug}>
+        <li class:list={[`depth-${heading.depth}`, 'flex items-start gap-3']}>
           <span class='mt-1 h-2 w-2 rounded-full bg-muted opacity-60' aria-hidden='true' />
           <a
             class='flex-1 leading-relaxed text-muted-foreground transition-colors duration-200 hover:text-foreground'
