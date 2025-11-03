@@ -1,11 +1,16 @@
 import type { ImageMetadata } from 'astro'
 import type { GalleryItem, GalleryMetadata } from './types'
 
-const IMAGE_GLOB = import.meta.glob<ImageMetadata | string>(
+type ImageModule =
+  | ImageMetadata
+  | { default: ImageMetadata }
+  | { default: string }
+  | string
+
+const IMAGE_GLOB = import.meta.glob<ImageModule>(
   '../../assets/gallery/**/*.{jpg,jpeg,png,webp,avif,gif,svg}',
   {
-    eager: true,
-    import: 'default'
+    eager: true
   }
 )
 
@@ -59,9 +64,18 @@ const parseFileParts = (fileName: string): ParsedFileParts => {
   }
 }
 
-const resolveImageSource = (value: ImageMetadata | string): string => {
+const resolveImageSource = (value: ImageModule): string => {
   if (typeof value === 'string') return value
-  if (value?.src) return value.src
+
+  if (value && typeof value === 'object') {
+    if ('src' in value && typeof value.src === 'string') {
+      return value.src
+    }
+
+    if ('default' in value) {
+      return resolveImageSource(value.default as ImageModule)
+    }
+  }
 
   throw new TypeError('Unable to resolve gallery image source')
 }
