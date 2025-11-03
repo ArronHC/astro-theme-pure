@@ -1,16 +1,10 @@
-import type { ImageMetadata } from 'astro'
 import type { GalleryItem, GalleryMetadata } from './types'
 
-type ImageModule =
-  | ImageMetadata
-  | { default: ImageMetadata }
-  | { default: string }
-  | string
-
-const IMAGE_GLOB = import.meta.glob<ImageModule>(
+const IMAGE_GLOB = import.meta.glob(
   '../../assets/gallery/**/*.{jpg,jpeg,png,webp,avif,gif,svg}',
   {
-    eager: true
+    eager: true,
+    import: 'default'
   }
 )
 
@@ -64,22 +58,6 @@ const parseFileParts = (fileName: string): ParsedFileParts => {
   }
 }
 
-const resolveImageSource = (value: ImageModule): string => {
-  if (typeof value === 'string') return value
-
-  if (value && typeof value === 'object') {
-    if ('src' in value && typeof value.src === 'string') {
-      return value.src
-    }
-
-    if ('default' in value) {
-      return resolveImageSource(value.default as ImageModule)
-    }
-  }
-
-  throw new TypeError('Unable to resolve gallery image source')
-}
-
 let cachedItems: GalleryItem[] | null = null
 
 export const loadGalleryItems = (): GalleryItem[] => {
@@ -96,7 +74,7 @@ export const loadGalleryItems = (): GalleryItem[] => {
   const items: GalleryItem[] = []
 
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
-    const image = resolveImageSource(mod)
+    const image = typeof mod === 'string' ? mod : (mod as { default: string }).default
     const key = normalizeKey(path)
     const fileName = key.split('/').pop() || key
     const fileParts = parseFileParts(fileName)
