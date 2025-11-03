@@ -49,6 +49,7 @@ export const theme: ThemeUserConfig = {
     menu: [
       { title: 'Blog', link: '/blog' },
       { title: 'Projects', link: '/projects' },
+      { title: 'Gallery', link: '/gallery' },
       { title: 'Links', link: '/links' },
       { title: 'About', link: '/about' }
     ]
