@@ -9,10 +9,24 @@ const headings = [
   { depth: 2, slug: 'care-guide', text: '维护方式 Care guide' }
 ]
 ---
-
+<PageLayout title='Gallery' {headings}>
   <section id='collection' class='mt-16 space-y-6'>
     <header class='space-y-2 text-center'>
       <h2 class='text-2xl font-semibold text-slate-900 dark:text-white sm:text-3xl'>我的日常瞬间</h2>
+      <div class='mt-6 flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground'>
+        <label class='font-medium text-slate-600 dark:text-slate-200' for='gallery-sort'>排列方式</label>
+        <select
+          id='gallery-sort'
+          class='rounded-full border border-white/60 bg-white/70 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-white/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 dark:border-white/15 dark:bg-white/10 dark:text-white'
+          data-gallery-sort
+          aria-label='选择图库排列方式'
+        >
+          <option value='alpha-asc'>A-Z 升序</option>
+          <option value='alpha-desc'>A-Z 降序</option>
+          <option value='time-asc'>按时间升序</option>
+          <option value='time-desc' selected>按时间降序</option>
+        </select>
+      </div>
     </header>
     {items.length > 0 ? (
       <GalleryGrid items={items} />
@@ -43,9 +57,9 @@ const headings = [
           </p>
         </article>
         <article class='flex flex-col gap-3 rounded-3xl border border-white/35 bg-white/70 p-6 text-left shadow-[0_24px_70px_-60px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all duration-500 hover:border-white/60 hover:shadow-[0_28px_90px_-65px_rgba(15,23,42,0.6)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_32px_90px_-70px_rgba(8,16,32,0.75)]'>
-          <h3 class='text-lg font-semibold text-slate-900 dark:text-white'>2. 按数字命名</h3>
+          <h3 class='text-lg font-semibold text-slate-900 dark:text-white'>2. 按日期命名</h3>
           <p class='text-sm leading-relaxed text-muted-foreground dark:text-slate-300'>
-            想自定义顺序时，把文件名写成 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.9em] dark:bg-white/10'>标题__副标题__描述__05.jpg</code>，数字越小越靠前。
+            想自定义顺序时，把文件名写成 <code class='rounded-md bg-black/5 px-1 py-0.5 text-[0.9em] dark:bg-white/10'>标题__副标题__描述__24-05-03.jpg</code>，也可以只写到月或年，系统会按日期排序。
           </p>
         </article>
         <article class='flex flex-col gap-3 rounded-3xl border border-white/35 bg-white/70 p-6 text-left shadow-[0_24px_70px_-60px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all duration-500 hover:border-white/60 hover:shadow-[0_28px_90px_-65px_rgba(15,23,42,0.6)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_32px_90px_-70px_rgba(8,16,32,0.75)]'>
