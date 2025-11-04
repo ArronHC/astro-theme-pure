@@ -24,6 +24,10 @@ const normalizeKey = (value: string) =>
 
 const tidy = (raw: string | undefined) => raw?.replace(/[-_]+/g, ' ').trim()
 
+interface HydratedGalleryItem extends GalleryItem {
+  sortTimestamp?: number
+}
+
 const resolveImageSource = (mod: string | ImageMetadata): string | null => {
   if (typeof mod === 'string') return mod
   if (mod && typeof mod === 'object' && 'src' in mod && typeof mod.src === 'string') {
@@ -45,7 +49,45 @@ interface ParsedFileParts {
   title?: string
   subtitle?: string
   description?: string
-  order?: number
+  capturedAt?: string
+  sortTimestamp?: number
+}
+
+const normaliseDate = (value: string): { iso: string; timestamp: number } | null => {
+  const match = value.match(/^(\d{2})(?:-(\d{2}))?(?:-(\d{2}))?$/)
+  if (!match) return null
+
+  const [, rawYear, rawMonth, rawDay] = match
+  const year = Number(rawYear)
+  if (Number.isNaN(year)) return null
+
+  const fullYear = 2000 + year
+  const month = rawMonth ? Number(rawMonth) : 1
+  if (Number.isNaN(month) || month < 1 || month > 12) return null
+
+  const dayFromToken = rawDay ? Number(rawDay) : 1
+  const daysInMonth = new Date(Date.UTC(fullYear, month, 0)).getUTCDate()
+  const day = Number.isNaN(dayFromToken)
+    ? 1
+    : Math.min(Math.max(dayFromToken, 1), daysInMonth)
+
+  const date = new Date(Date.UTC(fullYear, month - 1, day))
+  return {
+    iso: date.toISOString(),
+    timestamp: date.getTime()
+  }
+}
+
+const parseDateValue = (value: string | undefined): { iso: string; timestamp: number } | null => {
+  if (!value) return null
+
+  const normalised = normaliseDate(value)
+  if (normalised) return normalised
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.valueOf())) return null
+
+  return { iso: parsed.toISOString(), timestamp: parsed.getTime() }
 }
 
 const parseFileParts = (fileName: string): ParsedFileParts => {
@@ -55,9 +97,9 @@ const parseFileParts = (fileName: string): ParsedFileParts => {
   if (meaningfulParts.length === 0) return {}
 
   const lastPart = meaningfulParts.at(-1)
-  const order = lastPart && /^\d+$/.test(lastPart) ? Number(lastPart) : undefined
+  const dateInfo = lastPart ? normaliseDate(lastPart) : null
 
-  const contentParts = order !== undefined ? meaningfulParts.slice(0, -1) : meaningfulParts
+  const contentParts = dateInfo ? meaningfulParts.slice(0, -1) : meaningfulParts
 
   const [title, subtitle, description] = contentParts
 
@@ -65,7 +107,8 @@ const parseFileParts = (fileName: string): ParsedFileParts => {
     title,
     subtitle,
     description,
-    order
+    capturedAt: dateInfo?.iso,
+    sortTimestamp: dateInfo?.timestamp
   }
 }
 
@@ -82,7 +125,7 @@ export const loadGalleryItems = (): GalleryItem[] => {
     metadataMap.set(key, moduleValue)
   }
 
-  const items: GalleryItem[] = []
+  const items: HydratedGalleryItem[] = []
 
   for (const [path, mod] of Object.entries(IMAGE_GLOB)) {
     const image = resolveImageSource(mod)
@@ -96,6 +139,10 @@ export const loadGalleryItems = (): GalleryItem[] => {
     const fileParts = parseFileParts(fileName)
     const metadata = metadataMap.get(key)
 
+    const metadataDate = parseDateValue(metadata?.capturedAt)
+    const capturedAt = metadataDate?.iso ?? fileParts.capturedAt
+    const sortTimestamp = metadataDate?.timestamp ?? fileParts.sortTimestamp
+
     const title = metadata?.title ?? fileParts.title ?? tidy(fileName) ?? 'Untitled'
     const width = metadata?.width ?? imageData.width
     const height = metadata?.height ?? imageData.height
@@ -108,21 +155,32 @@ export const loadGalleryItems = (): GalleryItem[] => {
       title,
       subtitle: metadata?.subtitle ?? fileParts.subtitle,
       description: metadata?.description ?? fileParts.description,
+      capturedAt,
       palette: metadata?.palette,
       mood: metadata?.mood,
       layout,
       width,
       height,
-      order: metadata?.order ?? fileParts.order
+      order: metadata?.order,
+      sortTimestamp
     })
   }
 
-  cachedItems = items.sort((a, b) => {
-    const orderDiff = (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY)
-    if (orderDiff !== 0) return orderDiff
+  cachedItems = items
+    .sort((a, b) => {
+      const aTime = a.sortTimestamp ?? Number.NEGATIVE_INFINITY
+      const bTime = b.sortTimestamp ?? Number.NEGATIVE_INFINITY
+      if (aTime !== bTime) return bTime - aTime
 
-    return (a.title ?? '').localeCompare(b.title ?? '', 'zh-Hans')
-  })
+      const orderDiff = (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY)
+      if (orderDiff !== 0) return orderDiff
+
+      return (a.title ?? '').localeCompare(b.title ?? '', 'zh-Hans')
+    })
+    .map(({ sortTimestamp, ...rest }) => {
+      void sortTimestamp
+      return rest
+    })
 
   return cachedItems
 }

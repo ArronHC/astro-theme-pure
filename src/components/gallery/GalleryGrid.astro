@@ -20,9 +20,13 @@ const normalizedItems = items.map((item) => {
 })
 ---
 
-<div class='gallery-grid'>
+<div class='gallery-grid' data-gallery-grid>
   {normalizedItems.map((item) => (
-    <figure class={`gallery-card ${item.orientation === 'landscape' ? 'is-landscape' : 'is-portrait'}`}>
+    <figure
+      class={`gallery-card ${item.orientation === 'landscape' ? 'is-landscape' : 'is-portrait'}`}
+      data-title={item.title ?? item.subtitle ?? ''}
+      data-date={item.capturedAt ? Date.parse(item.capturedAt) : ''}
+    >
       <a
         class='gallery-link'
         href={item.image}
@@ -48,6 +52,71 @@ const normalizedItems = items.map((item) => {
     </figure>
   ))}
 </div>
+
+<script is:inline>
+  const initGallerySorting = () => {
+    const grid = document.querySelector('[data-gallery-grid]')
+    const control = document.querySelector('[data-gallery-sort]')
+
+    if (!(grid instanceof HTMLElement) || !(control instanceof HTMLSelectElement)) {
+      return
+    }
+
+    const collator = new Intl.Collator('zh-Hans', { numeric: true, sensitivity: 'base' })
+
+    const items = Array.from(grid.children)
+      .filter((element) => element instanceof HTMLElement)
+      .map((element) => {
+        const rawDate = element.dataset.date
+        return {
+          element,
+          title: (element.dataset.title ?? '').trim(),
+          date: rawDate && rawDate.length > 0 ? Number(rawDate) : Number.NaN
+        }
+      })
+
+    const applySort = (mode) => {
+      const sorted = [...items]
+
+      switch (mode) {
+        case 'alpha-desc':
+          sorted.sort((a, b) => collator.compare(b.title, a.title))
+          break
+        case 'time-asc':
+          sorted.sort((a, b) => {
+            const aTime = Number.isFinite(a.date) ? a.date : Number.POSITIVE_INFINITY
+            const bTime = Number.isFinite(b.date) ? b.date : Number.POSITIVE_INFINITY
+            return aTime - bTime
+          })
+          break
+        case 'time-desc':
+          sorted.sort((a, b) => {
+            const aTime = Number.isFinite(a.date) ? a.date : Number.NEGATIVE_INFINITY
+            const bTime = Number.isFinite(b.date) ? b.date : Number.NEGATIVE_INFINITY
+            return bTime - aTime
+          })
+          break
+        case 'alpha-asc':
+        default:
+          sorted.sort((a, b) => collator.compare(a.title, b.title))
+          break
+      }
+
+      for (const { element } of sorted) {
+        grid.append(element)
+      }
+    }
+
+    applySort(control.value)
+    control.addEventListener('change', () => applySort(control.value))
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGallerySorting, { once: true })
+  } else {
+    initGallerySorting()
+  }
+</script>
 
 <style>
   .gallery-grid {

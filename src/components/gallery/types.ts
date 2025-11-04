@@ -7,6 +7,8 @@ export interface GalleryItem {
   subtitle?: string
   /** Optional description displayed under the title. */
   description?: string
+  /** Optional capture date derived from the file name (ISO 8601). */
+  capturedAt?: string
   /** Optional colour swatches kept for backwards compatibility. */
   palette?: string[]
   /** Optional mood badge kept for backwards compatibility. */
