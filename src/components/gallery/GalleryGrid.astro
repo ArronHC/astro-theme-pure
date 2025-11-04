@@ -65,7 +65,7 @@ const normalizedItems = items.map((item) => {
     const collator = new Intl.Collator('zh-Hans', { numeric: true, sensitivity: 'base' })
 
     const items = Array.from(grid.children)
-      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+      .filter((element) => element instanceof HTMLElement)
       .map((element) => {
         const rawDate = element.dataset.date
         return {
