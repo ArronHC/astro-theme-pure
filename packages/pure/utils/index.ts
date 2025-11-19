@@ -15,3 +15,4 @@ export { getTheme, listenThemeChange, setTheme } from './theme'
 
 // Toast
 export { showToast } from './toast'
+export { renderMathInText } from './render-math-in-text'

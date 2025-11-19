@@ -1,6 +1,7 @@
 ---
 import { type TocItem } from '../../plugins/toc'
-import { cn } from '../../utils'
+import { cn, renderMathInText } from '../../utils'
+import 'katex/dist/katex.min.css'
 
 interface Props {
   heading: TocItem
@@ -24,8 +25,9 @@ const text = rawText.endsWith('#') ? rawText.slice(0, -1) : rawText
         'toc-item line-clamp-2 px-3 py-1 ms-2 text-foreground/75 transition-all hover:text-foreground [&.highlight]:font-medium [&.highlight]:text-primary [&.is-read]:text-input [&.highlight-bg-translucent]:bg-muted',
         depth > 2 && 'ps-7'
       )}
-      href={`#${slug}`}>{text}</a
-    >
+      href={`#${slug}`}
+      set:html={renderMathInText(text)}
+    ></a>
   </div>
   {
     !!subheadings.length && (
