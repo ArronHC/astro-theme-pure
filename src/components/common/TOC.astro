@@ -1,5 +1,6 @@
 ---
 import type { MarkdownHeading } from 'astro'
+import { renderMathInText } from '@/utils/render-math-in-text'
 
 interface Props {
   headings?: MarkdownHeading[]
@@ -30,9 +31,8 @@ const filteredHeadings = headings.filter((heading) => heading?.slug)
           <a
             class='flex-1 leading-relaxed text-muted-foreground transition-colors duration-200 hover:text-foreground'
             href={`#${heading.slug}`}
-          >
-            {heading.text}
-          </a>
+            set:html={renderMathInText(heading.text)}
+          ></a>
         </li>
       ))}
     </ul>
