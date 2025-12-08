@@ -4,7 +4,7 @@ description: callout，用于在文档中创建醒目、突出的标签块所设
 tags:
 - 笔记
 - Markdown
-heroImage: {src: './pics/Callout/callout.png', inferSize: true}
+heroImage: {src: 'https://blogppics.oss-cn-beijing.aliyuncs.com/blogpics/callout.png', inferSize: true}
 publishDate: 2025-09-03 18:11:51
 comment: true
 ---
