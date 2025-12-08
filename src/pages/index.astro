@@ -75,16 +75,6 @@ const allPostsByDate = sortMDByDate(allPosts).slice(0, MAX_POSTS)
         )
       }
 
-      <Section title='Gallery'>
-        <p class='text-muted-foreground'>
-          📷 探索这本两列排布的珍藏相册，所有照片都来自 <code>src/assets/gallery/</code> 文件夹。
-        </p>
-        <p class='text-muted-foreground'>
-          通过在文件名后添加 <code>__序号</code>，即可自定义展示顺序，无需修改任何代码。
-        </p>
-        <Button title='进入 Gallery' class='w-fit self-end' href='/gallery' variant='ahead' />
-      </Section>
-
       {
         /* <Section title='Experience'>
       <Card
