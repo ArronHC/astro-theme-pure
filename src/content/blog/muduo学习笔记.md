@@ -320,4 +320,881 @@ conn->send(msg);
         
 10. **回归**：一切处理完毕，`EventLoop` 看看表（更新时间），发现没别的事了，又回到 `Poller` 那里继续打盹，等待下一个信号。
 
-也就是说，**socket**用来处理文件的进出，**Poller**用来监测有无文件进出，然后唤醒 **EventLoop**，**EventLoop**唤醒 **Channel**，**Channel**根据文件类型，发信号给 **TcpConnection**，**TcpConnection**把文件接收过来，按照“callback”去给 **User** “打电话”，**User**接到电话，处理这批货，再发给**TcpConnection**，**TcpConnection**尝试直接把货塞给 **socket**，能塞完就结束了，塞不完就把货放在 **OutputBuffer**，让 **Channel** 关注“写事件”，**Channel**转头告诉**EventLoop**，**EventLoop**记下来，就继续到 **Poller**等待了，直到这个 socket 的发送缓冲区空出来，系统内核叫醒 **EventLoop**，**EventLoop**再让 **Channel** 调用 `TcpConnection::handleWrite()` 继续传
+
+## 从零开始自己造
+
+### 前置知识 ：
+#### protected/private
+前者可以被子类访问，后者只能自己访问
+#### static
+用 `static` 修饰的函数，表示这个类可以直接调用，不用声明对象，比方说
+```cpp
+Timestamp::now();
+```
+我们在类中使用 `static const` 来定义常量，比方说
+```cpp
+static const int kNoneEvent;
+```
+#### const
+- 放在函数定义后面，表示这个函数不会修改类中的任何数据
+- 放在函数定义前面，修饰这个函数的返回值，表示这个返回值不可修改
+#### explicit
+用于修饰构造函数，**防止编译器进行隐式类型转换**，防止出现不必要的 bug
+为了防止这种情况发生：
+```cpp
+class Socket {
+public:
+    Socket(int fd) { /* ... */ } // 注意：这里没加 explicit
+};
+
+void checkSocket(Socket s) { /* ... */ }
+
+int main() {
+    // 编译器会悄悄把 10 转换成 Socket(10)
+    // 这在语义上很奇怪：10 只是个数字，怎么就变成对象了？
+    checkSocket(10); 
+    
+    // 甚至允许这种写法：
+    Socket s = 20; 
+}
+
+```
+#### 类中的私有变量
+比方说 `Socket` 类中的 `sockfd_`，我们习惯性地在私有变量后面加上 `_`
+#### using
+typedef 的现代化写法
+我们可以这样来新建一个类型：
+```cpp
+using ChannelList = std::vector<Channel*>;
+```
+很好懂，意思是我们建立一个新的类型 `ChannelList`，这个类型实际上是一个 `Channel` 指针的 `vector` 
+#### 继承
+当 B 类是 A 类时，我们使用继承，比方说狗是动物，就可以狗继承动物
+```cpp
+// 父类（基类）
+class Animal {
+public:
+    void eat() { std::cout << "正在进食..." << std::endl; }
+};
+
+// 子类（派生类）继承自 Animal
+class Dog : public Animal {
+public:
+    void bark() { std::cout << "汪汪叫！" << std::endl; }
+};
+
+```
+有 public 继承、protected 继承、private 继承，主要改变的就是 public 和 protected 的访问权限
+
+🌟我们可以在父类中设置虚函数，利用 `virtual` 关键字，可以在子类中重构父类的虚函数，使用 `final` 关键词可以阻止某个函数被继承
+```cpp
+class Shape {
+public:
+    // 虚函数：允许子类重写
+    virtual void draw() { std::cout << "画一个图形" << std::endl; }
+    // 纯虚函数：该类变为“抽象类”，不能实例化，子类必须实现
+    virtual void area() = 0; 
+    
+    // 核心点：虚析构函数（防止内存泄漏）
+    virtual ~Shape() {} 
+};
+
+class Circle : public Shape {
+public:
+    // C++11 建议加上 override 明确表示重写
+    void draw() override { std::cout << "画一个圆" << std::endl; }
+    void area() override { /* 实现逻辑 */ }
+};
+
+```
+
+#### static_cast<类型>
+用来进行强制类型准换，用法：
+```cpp
+double pi = 3.14159;
+int num = static_cast<int>(pi); // 去掉小数部分，变为 3
+```
+
+---
+接下来我们按照顺序来构建每个类：
+### Noncopyable 类
+这个类是一个继承类，许多不可复制的类可以直接继承它
+#### Noncopyable. h
+```cpp
+#pragma once
+
+/*
+
+NonCopyable类
+
+所有继承了这个类的类都无法被拷贝
+
+*/
+
+class NonCopyable
+
+{
+
+public:
+
+    //删除拷贝构造函数
+
+    NonCopyable(const NonCopyable&) = delete;
+
+    //删除复制运算符
+
+    NonCopyable& operator=(const NonCopyable&) = delete;
+
+  
+
+protected:
+
+    NonCopyable() = default;
+
+    ~NonCopyable() = default;
+
+};
+```
+
+---
+### InetAddress 类
+这个类的主要作用就是把底层繁琐的网络地址数据**封装**起来，**屏蔽了复杂的字节序转换和结构体操作**
+
+在 Linux 底层，网络地址使用结构体来实现的（比方说 `sockaddr_in` 用于 ipv4），直接操作的话很麻烦，于是用 `InetAddress` 把它封装起来，极大简化了代码量
+
+#### InetAddress.h
+```cpp
+#pragma once
+
+  
+
+#include <arpa/inet.h>
+
+#include <netinet/in.h>
+
+#include <string>
+
+  
+
+class InetAddress
+
+{
+
+public:
+
+    explicit InetAddress(uint16_t port, std::string ip = "127.0.0.1");
+
+  
+
+    explicit InetAddress(const struct sockaddr_in& addr)
+
+        : addr_(addr)
+
+    {}
+
+  
+
+    void setSockAddr(const struct sockaddr_in& addr) { addr_ = addr; }
+
+    std::string toIp() const;
+
+  
+
+    std::string toIpPort() const;
+
+  
+
+    uint16_t toPort() const;
+
+  
+
+    const struct sockaddr_in* getSockAddr() const { return &addr_; }
+
+  
+
+private:
+
+    struct sockaddr_in addr_;
+
+};
+```
+
+#### InetAddress.cc
+```cpp
+#include "InetAddress.h"
+
+#include <strings.h>
+
+#include <string.h>
+
+  
+
+InetAddress::InetAddress(uint16_t port, std::string ip)
+
+{
+
+    bzero(&addr_, sizeof addr_);
+
+  
+
+    addr_.sin_family = AF_INET;
+
+  
+
+    addr_.sin_port = htons(port);
+
+  
+
+    inet_pton(AF_INET, ip.c_str(), &addr_.sin_addr.s_addr);
+
+}
+
+  
+
+std::string InetAddress::toIp() const
+
+{
+
+    char buf[64] = {0};
+
+    ::inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof buf);
+
+    return buf;
+
+}
+
+  
+
+std::string InetAddress::toIpPort() const
+
+{
+
+    char buf[64] = {0};
+
+    ::inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof buf);
+
+    size_t end = strlen(buf);
+
+    uint16_t port = ntohs(addr_.sin_port);
+
+    sprintf(buf+end, ":%u", port);
+
+    return buf;
+
+}
+
+  
+
+uint16_t InetAddress::toPort() const
+
+{
+
+    return ntohs(addr_.sin_port);
+
+}
+```
+
+这里稍微理解一下就行，以后当做底层工具来调用就好了
+
+---
+### Timestamp 类
+这个类也是用来封装底层复杂逻辑的类，用处就是获取时间戳
+#### Timestamp.h
+```cpp
+#pragma once
+
+#include <iostream>
+
+#include <string>
+
+  
+
+class Timestamp
+
+{
+
+public:
+
+    Timestamp();
+
+    explicit Timestamp(int64_t microSecondsSinceEpoch);
+
+    static Timestamp now();
+
+    std::string toString() const;
+
+    int64_t microSecondsSinceEpoch() const { return microSecondsSinceEpoch_;}
+
+  
+
+private:
+
+    int64_t microSecondsSinceEpoch_;
+
+};
+```
+#### Timestamp.cc
+```cpp
+#include "Timestamp.h"
+
+#include <time.h>
+
+  
+
+Timestamp::Timestamp() : microSecondsSinceEpoch_(0) {}
+
+  
+
+Timestamp::Timestamp(int64_t microSecondsSinceEpoch)
+
+    : microSecondsSinceEpoch_(microSecondsSinceEpoch)
+
+{}
+
+  
+
+Timestamp Timestamp::now()
+
+{
+
+    return Timestamp(time(NULL));
+
+}
+
+  
+
+std::string Timestamp::toString() const
+
+{
+
+    char buf[128] = {0};
+
+    time_t seconds = static_cast<time_t>(microSecondsSinceEpoch_);
+
+    struct tm *tm_time = localtime(&seconds);
+
+    snprintf(buf, sizeof(buf), "%4d/%02d/%02d %02d:%02d:%02d",
+
+             tm_time->tm_year + 1900,
+
+             tm_time->tm_mon + 1,
+
+             tm_time->tm_mday,
+
+             tm_time->tm_hour,
+
+             tm_time->tm_min,
+
+             tm_time->tm_sec);
+
+    return buf;
+
+}
+```
+
+同样是直接调用就好了，简化代码用的。
+
+---
+
+### 🌟Socket 类
+
+> [!note] socket 是什么？
+> socket（网络连接） 是传输层和应用层之间的桥梁，把复杂的 TCP/IP 协议隐藏在 socket 接口后面。socket 相当于一个**电话机**，用来接发文件的
+
+在 linux 中，“**一切皆文件**”，socket 也不例外，每个 socket 都和一个 fd（文件描述符，其实就是个 ID） 一一对应
+
+socket 的作用就是绑定 IP 地址、接发数据包
+#### Socket. h
+```cpp
+#pragma once
+
+  
+
+#include "NonCopyable.h"
+
+  
+
+class InetAddress;
+
+  
+
+class Socket : NonCopyable
+
+{
+
+public:
+
+    explicit Socket(int sockfd)
+
+        : sockfd_(sockfd)
+
+    {}
+
+  
+
+    ~Socket();
+
+  
+
+    int fd() const { return sockfd_; }
+
+  
+
+    void bindAddress(const InetAddress& localaddr);
+
+  
+
+    void listen();
+
+  
+
+    int accept(InetAddress* peeraddr);
+
+  
+
+    void setReuseAddr(bool on);
+
+  
+
+private:
+
+    const int sockfd_;
+
+};
+```
+
+#### Socket.cc
+```cpp
+#include "Socket.h"
+
+#include "InetAddress.h"
+
+#include <unistd.h>
+
+#include <sys/types.h>
+
+#include <sys/socket.h>
+
+#include <netinet/tcp.h>
+
+  
+
+Socket::~Socket()
+
+{
+
+    ::close(sockfd_);
+
+}
+
+  
+
+void Socket::bindAddress(const InetAddress& localaddr)
+
+{
+
+    int ret = ::bind(sockfd_,
+
+                    (const struct sockaddr*)localaddr.getSockAddr(),
+
+                    sizeof(struct sockaddr_in));
+
+    if(ret<0)
+
+    {
+
+        perror("bind sockfd error!");
+
+    }
+
+}
+
+  
+
+void Socket::listen()
+
+{
+
+    int ret = ::listen(sockfd_, 1024);
+
+    if(ret<0)
+
+    {
+
+        perror("listen sockfd error!");
+
+    }
+
+}
+
+  
+
+int Socket::accept(InetAddress* peeraddr)
+
+{
+
+    struct sockaddr_in addr;
+
+    socklen_t len = sizeof addr;
+
+  
+
+    int connfd = ::accept(sockfd_, (struct sockaddr*)&addr, &len);
+
+  
+
+    if(connfd >= 0)
+
+    {
+
+        peeraddr->setSockAddr(addr);
+
+    }
+
+  
+
+    return connfd;
+
+}
+
+  
+
+void Socket::setReuseAddr(bool on)
+
+{
+
+    int optval = on ? 1 : 0;
+
+    ::setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+
+}
+```
+
+在这里我们就能看出 RAII（Resource Acquisition Is Initialization，**资源获取即初始化**）原则，**将资源的生命周期与对象作绑定**，对象死了资源自动释放，构造函数中请求资源，析构函数中释放资源（C++在函数结束、抛出异常等情况保证能调用析构函数），防止了内存泄漏，不用再手动管理资源了
+
+这里面讲几个点：
+#### Ip 地址
+在 linux 内核中，用 `strcut sockaddr` 来存储地址，这是个通用接口，长这样：
+```cpp
+struct sockaddr {
+    unsigned short sa_family; // 地址族 (如 AF_INET 代表 IPv4)
+    char sa_data[14];         // 包含 IP 和端口的原始数据（难以直接读写）
+};
+
+```
+另外还有个便于程序员读写的、专为 IPv4 设计的 `strcut sockaddr_in`，长这样：
+```cpp
+struct sockaddr_in {
+    short            sin_family;   // 地址族 (固定为 AF_INET)
+    unsigned short   sin_port;     // 16位端口号 (必须是网络字节序 htons)
+    struct in_addr   sin_addr;     // 32位 IP 地址结构
+    char             sin_zero[8];  // 填充位，为了和 sockaddr 长度保持一致
+};
+
+```
+
+那么我们在设置 IP 的时候就这样：在 `sockaddr_in` 中设好参数，在强制类型转换成 `sockaddr` 供程序底层使用，也就有了这个代码：
+```cpp
+void Socket::bindAddress(const InetAddress& localaddr)
+
+{
+//注意这里的类型转换
+    int ret = ::bind(sockfd_,
+
+                    (const struct sockaddr*)localaddr.getSockAddr(),
+
+                    sizeof(struct sockaddr_in));
+
+    if(ret<0)
+
+    {
+
+        perror("bind sockfd error!");
+
+    }
+
+}
+```
+
+### 🌟Channel 类
+每个 socket 都对应一个 Channel，Channel 选择监听哪些信息，但是 **Channel 本身不负责监听**，他只是列个表，然后由 Poller 监听 socket 是否传输了表中的内容。
+Poller 监听到之后，再汇报给 EventLoop，EventLoop 拿到 activeChannels 清单，对照着清单一一唤醒Channels
+Channel 被唤醒之后，再去叫别的类去进行接下来的操作
+大概逻辑：
+![60748e52ab78bb72d6260966980f1790.jpg](https://blogppics.oss-cn-beijing.aliyuncs.com/blogpics/20251224163013497.png)
+我们不直接拿 Channel 去监听 socket，因为这样的话，一万个 scoket 就对应一万个 Channel，每个 Channel 始终监视着 socket，会占用极大的内存
+我们用One Loop Per Thread（一个线程一个循环）原则，能让一个线程同时处理成千上万的链接
+
+#### Channel.h
+```cpp
+#pragma once
+
+  
+
+#include "NonCopyable.h"
+
+#include <functional>
+
+#include <memory>
+
+  
+
+class EventLoop;
+
+  
+
+class Channel : NonCopyable
+
+{
+
+public:
+
+    using EventCallback = std::function<void()>;
+
+  
+
+    Channel(EventLoop* loop, int fd);
+
+    ~Channel();
+
+  
+
+    void handleEvent();
+
+  
+
+    void setReadCallback(EventCallback cb) { readCallback_ = std::move(cb); }
+
+    void setWriteCallback(EventCallback cb) { writeCallback_ = std::move(cb); }
+
+    void setErrorCallback(EventCallback cb) { errorCallback_ = std::move(cb); }
+
+    void setCloseCallback(EventCallback cb) { closeCallback_ = std::move(cb); }
+
+  
+  
+
+    int index() { return index_; }
+
+    void set_index(int idx) { index_ = idx; }
+
+  
+
+    int fd() const { return fd_; }
+
+    int events() const { return events_; }
+
+  
+
+    void set_revents(int revt) { revents_ = revt; }
+
+  
+
+    bool isNoneEvents() const { return events_ == kNoneEvent; }
+
+  
+
+    void enableReading() { events_ |= kReadEvent; update(); }
+
+    void disableReading() { events &= ~kReadEvent; update(); }
+
+    void enableWriting() { events_ |= kWriteEvent; update(); }
+
+    void disableWriting() { events_ &= ~kWriteEvent; update(); }
+
+    void disableAll() { events_ = kNoneEvent; update(); }
+
+  
+
+    //你开启监听/写入了吗
+
+    bool isWriting() const { return events_ & kWriteEvent; }
+
+    bool isReading() const { return events_ & kReadEvent; }
+
+  
+
+private:
+
+    void update();
+
+  
+
+    static const int kNoneEvent;
+
+    static const int kReadEvent;
+
+    static const int kWriteEvent;
+
+  
+
+    EventLoop* loop_;
+
+    const int fd_;
+
+  
+
+    int events_;
+
+    int revents_;
+
+    int index_;
+
+  
+
+    EventCallback readCallback_;
+
+    EventCallback writeCallback_;
+
+    EventCallback errorCallback_;
+
+    EventCallback closeCallback_;
+
+};
+```
+
+#### Channel.cc
+```cpp
+#include "Channel.h"
+
+#include "Eventloop.h"
+
+#include <sts/epoll.h>
+
+#include <iostream>
+
+  
+
+const int Channel::kNoneEvent = 0;
+
+const int Channel::kReadEvent = EPOLLIN | EPOLLPRI;
+
+const int Channel::kWriteEvent = EPOLLOUT;
+
+  
+
+Channel::Channel(EventLoop* loop, int fd)
+
+    : loop_(loop),
+
+      fd_(fd),
+
+      events_(0),
+
+      revents_(0),
+
+      index_(-1),
+
+      tied_(false)
+
+{}
+
+  
+
+Channel::~Channel()
+
+{
+
+  
+
+}
+
+  
+
+void Channel::update()
+
+{
+
+    loop_->updateChannel(this);
+
+  
+
+    std::cout<<"Channel updated: fd="<< fd_ << " events="<<events_<<std::endl;
+
+  
+
+}
+
+  
+
+void Channel::handleEvent
+
+{
+
+    std::cout << "Channel::handleEvent revents: " << revents_ << std::endl;
+
+  
+
+    if((revents_ & EPOLLHUP) && !(revents_ & EPOLLIN))
+
+    {
+
+        if(closeCallback_) closeCallback_();
+
+    }
+
+  
+
+    if(revents_ & EPOLLERR)
+
+    {
+
+        if(errorCallback_) errorCallback_();
+
+    }
+
+  
+
+    if(revents_ & (EPOLLIN | EPOLLPRI))
+
+    {
+
+        if(readCallback_) readCallback_();
+
+    }
+
+  
+
+    if(revents_ & EPOLLOUT)
+
+    {
+
+        if(writeCallback_) writeCallback_();
+
+    }
+
+  
+
+}
+```
+
+可以看出，**Channel 的作用就是设置自己需要响应的事件、响应事件**
+讲几个点：
+#### kReadEvent
+其中 k 是 const 的缩写，代码中是这么定义的：
+```cpp
+const int Channel::kNoneEvent = 0;
+
+const int Channel::kReadEvent = EPOLLIN | EPOLLPRI;
+
+const int Channel::kWriteEvent = EPOLLOUT;
+```
+这其实相当于 01 开关，通过位运算来控制我们监听的事件，这么用：
+```cpp
+	void enableReading() { events_ |= kReadEvent; update(); }
+
+    void disableReading() { events &= ~kReadEvent; update(); }
+
+    void enableWriting() { events_ |= kWriteEvent; update(); }
+
+    void disableWriting() { events_ &= ~kWriteEvent; update(); }
+
+    void disableAll() { events_ = kNoneEvent; update(); }
+```
+这样来添加或者删减 Channel 监听的类型
+#### update ()
+其实只需要明确一点就明白了：
+Channel 的 events 是自己想要监听的内容，但是需要把这个内容发给 Poller，由他来监听，自然需要 update 一下了
+
+### Poller 类
+
