@@ -10,16 +10,16 @@ publishDate: 2025-12-19 19:31:23
 为了精进自己的后端开发能力，打算深入陈硕大佬的 muduo 项目，学习网络编程中的Reactor 多线程并发模型，如何处理高并发的情况。
 
 ---
-## 动起来！
+# 动起来！
 我们在拆解“发动机”之前，不妨先看看这个“发动机”动起来是什么样的：
-### 1. 安装依赖
+## 1. 安装依赖
 ```bash
 sudo apt-get update
 sudo apt-get install git cmake g++ gcc
 # 安装 boost 库
 sudo apt-get install libboost-dev libboost-test-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev
 ```
-### 2. 下载并编译
+## 2. 下载并编译
 陈硕老师提供了编译脚本
 ```bash
 # 克隆仓库
@@ -29,7 +29,7 @@ cd muduo
 # 运行构建脚本
 ./build.sh
 ```
-### 3. 看一下效果
+## 3. 看一下效果
 我们以老师提供的例子之一 `Echo Server`（回显服务器，你发什么他回什么）来看一下效果：
 
 **建立服务端：**
@@ -45,7 +45,7 @@ nc 127.0.0.1 2000
 可以看到，这是个回显服务器~
 
 ---
-## 解剖
+# 解剖
 
 下一步，我们要了解这背后的原理，其大致由一下核心部分组成，我们用银行来举例子：
 1. **EventLoop**：银行的大堂经理，用来唤醒柜台干活，一个银行有且仅有一个大堂经理
@@ -59,7 +59,7 @@ nc 127.0.0.1 2000
 - **子线程群**：负责具体业务的银行，也就是上面我们提到的这些业务
 
 这样，我们就实现了完整的流程。下面，我们看一下每个核心的核心代码：
-### Eventloop
+## Eventloop
 这段代码是 muduo 的**绝对核心**，所有的操作都是在这个死循环中进行的，是子线程群的业务逻辑。
 ```cpp
 void EventLoop::loop()
@@ -97,14 +97,14 @@ void EventLoop::loop()
 
 ```
 我们来拆解这段绝对核心：
-#### 1. 阻塞与等待（The wait）
+### 1. 阻塞与等待（The wait）
 ```cpp
 pollReturnTime_ = poller_->poll(kPollTimeMs, &activeChannels_);
 ```
 - Eventloop 问：在最近 `kPollTimeMs` 这段时间，有哪些窗口有事儿要做？
 - 假如没有事件，这个线程就会挂起，直到有“客户”再进行处理，而挂起的时候不占用 CPU
 - 假如有事件，那么就会把需要进行业务的 Channels 收集到 `activeChannels_` 中，再进行接下来的操作
-#### 2. 处理网络事件（The Action）
+### 2. 处理网络事件（The Action）
 ```cpp
 for (Channel* channel : activeChannels_)
     {
@@ -114,7 +114,7 @@ for (Channel* channel : activeChannels_)
 ```
 其实很简单吧！一下就能看懂，遍历每个有事件的窗口，每个窗口“按一下对应的按钮”就可以了
 
-#### 3. 处理“任务队列”（The Pending Tasks）
+### 3. 处理“任务队列”（The Pending Tasks）
 
 >  pending: 代办的
 
@@ -124,7 +124,7 @@ doPendingFunctors();
 **Eventpoll**在等待客户（休眠状态），但是这个时候另外一个线程想让这个这个线程干点事情，如何调用**Eventpoll**？就用这个函数：
 外面的线程把任务塞到一个队列里，然后把**Eventpoll**叫醒，**Eventpoll**醒来之后，处理完网络事件，走到这里，就会把队列里的任务执行一遍
 
-## Channel
+# Channel
 Channel 只用考虑这个业务的状态就可以了，而不用管这个业务是什么，这个具体业务由 **TcpConnection** 负责
 而这些状态是 Linux 中写死的东西，不会增不会减：
 `POLLIN`（可读）、`POLLOUT`（可写）、`POLLHUP`（挂断）、`POLLERR`（错误）
@@ -165,7 +165,7 @@ void Channel::handleEventWithGuard(Timestamp receiveTime)
 ```
 Channel 要干的事情很无脑，就是个**分类**的活，在接到 **Poller**递过来的events 之后，去按对应的按钮就行了，至于具体的逻辑，我们留给 **TcpConnection**考虑
 
-### TcpConnection
+## TcpConnection
 
 ```cpp
 TcpConnection::TcpConnection(EventLoop* loop,
@@ -274,10 +274,10 @@ conn->send(msg);
 ```
 然后这不是个回显服务器吗，直接把数据发送回 Channel 就可以了，这里，Muduo 会启动 Channel 的 `POLLOUT` 写事件，等 socket 准备好了，EventLoop 会自动帮你发出去，而用户只管把没发送完的数据放到缓存区，就可以离开了。
 
-## 串起来看看！
+# 串起来看看！
 
 现在，让我们把时间轴动起来。假设一个客户端发来了 `"Hello"`。
-#### 第一幕：沉睡与唤醒 (Monitoring)
+## 第一幕：沉睡与唤醒 (Monitoring)
 
 1. **静默**：`EventLoop` (经理) 正在休息（阻塞在 `Poller::poll`）。
     
@@ -286,7 +286,7 @@ conn->send(msg);
 3. **感知**：`Poller` (监控) 瞬间捕捉到红灯，立马把 `EventLoop` 摇醒：“经理！3号门有动静！”
     
 
-#### 第二幕：分发与搬运 (Dispatch & Read)
+## 第二幕：分发与搬运 (Dispatch & Read)
 
 4. **分发**：`EventLoop` 醒来，找到负责3号门的 `Channel` (安保)，说：“去处理一下。”
     
@@ -295,7 +295,7 @@ conn->send(msg);
 6. **搬运**：`TcpConnection` (专员) 跑过来，手里拿着 `Buffer` (篮子)，调用 `inputBuffer_.readFd()`，把 `"Hello"` 从内核搬到了应用的内存里。
     
 
-#### 第三幕：决策与执行 (Business Logic)
+## 第三幕：决策与执行 (Business Logic)
 
 7. **上报**：货搬完了，`TcpConnection` 拿出你一开始给它的“电话号码” (`onMessage`)，打了过去。
     
@@ -310,7 +310,7 @@ conn->send(msg);
     - 你调用 `conn->send("HELLO")`。
         
 
-#### 第四幕：发送与离场 (Send & Loop)
+## 第四幕：发送与离场 (Send & Loop)
 
 9. **发送**：`TcpConnection` 尝试直接把 `"HELLO"` 塞回 Socket。
     
@@ -321,12 +321,12 @@ conn->send(msg);
 10. **回归**：一切处理完毕，`EventLoop` 看看表（更新时间），发现没别的事了，又回到 `Poller` 那里继续打盹，等待下一个信号。
 
 
-## 从零开始自己造
+# 从零开始自己造
 
-### 前置知识 ：
-#### protected/private
+## 前置知识 ：
+### protected/private
 前者可以被子类访问，后者只能自己访问
-#### static
+### static
 用 `static` 修饰的函数，表示这个类可以直接调用，不用声明对象，比方说
 ```cpp
 Timestamp::now();
@@ -335,10 +335,10 @@ Timestamp::now();
 ```cpp
 static const int kNoneEvent;
 ```
-#### const
+### const
 - 放在函数定义后面，表示这个函数不会修改类中的任何数据
 - 放在函数定义前面，修饰这个函数的返回值，表示这个返回值不可修改
-#### explicit
+### explicit
 用于修饰构造函数，**防止编译器进行隐式类型转换**，防止出现不必要的 bug
 为了防止这种情况发生：
 ```cpp
@@ -359,16 +359,16 @@ int main() {
 }
 
 ```
-#### 类中的私有变量
+### 类中的私有变量
 比方说 `Socket` 类中的 `sockfd_`，我们习惯性地在私有变量后面加上 `_`
-#### using
+### using
 typedef 的现代化写法
 我们可以这样来新建一个类型：
 ```cpp
 using ChannelList = std::vector<Channel*>;
 ```
 很好懂，意思是我们建立一个新的类型 `ChannelList`，这个类型实际上是一个 `Channel` 指针的 `vector` 
-#### 继承
+### 继承
 当 B 类是 A 类时，我们使用继承，比方说狗是动物，就可以狗继承动物
 ```cpp
 // 父类（基类）
@@ -408,7 +408,7 @@ public:
 
 ```
 
-#### static_cast<类型>
+### static_cast<类型>
 用来进行强制类型准换，用法：
 ```cpp
 double pi = 3.14159;
@@ -417,9 +417,9 @@ int num = static_cast<int>(pi); // 去掉小数部分，变为 3
 
 ---
 接下来我们按照顺序来构建每个类：
-### Noncopyable 类
+## Noncopyable 类
 这个类是一个继承类，许多不可复制的类可以直接继承它
-#### Noncopyable. h
+### Noncopyable. h
 ```cpp
 #pragma once
 
@@ -457,12 +457,12 @@ protected:
 ```
 
 ---
-### InetAddress 类
+## InetAddress 类
 这个类的主要作用就是把底层繁琐的网络地址数据**封装**起来，**屏蔽了复杂的字节序转换和结构体操作**
 
 在 Linux 底层，网络地址使用结构体来实现的（比方说 `sockaddr_in` 用于 ipv4），直接操作的话很麻烦，于是用 `InetAddress` 把它封装起来，极大简化了代码量
 
-#### InetAddress.h
+### InetAddress.h
 ```cpp
 #pragma once
 
@@ -519,7 +519,7 @@ private:
 };
 ```
 
-#### InetAddress.cc
+### InetAddress.cc
 ```cpp
 #include "InetAddress.h"
 
@@ -599,7 +599,7 @@ uint16_t InetAddress::toPort() const
 ---
 ### Timestamp 类
 这个类也是用来封装底层复杂逻辑的类，用处就是获取时间戳
-#### Timestamp.h
+### Timestamp.h
 ```cpp
 #pragma once
 
@@ -633,7 +633,7 @@ private:
 
 };
 ```
-#### Timestamp.cc
+### Timestamp.cc
 ```cpp
 #include "Timestamp.h"
 
@@ -696,7 +696,7 @@ std::string Timestamp::toString() const
 
 ---
 
-### 🌟Socket 类
+## 🌟Socket 类
 
 > [!note] socket 是什么？
 > socket（网络连接） 是传输层和应用层之间的桥梁，把复杂的 TCP/IP 协议隐藏在 socket 接口后面。socket 相当于一个**电话机**，用来接发文件的
@@ -704,7 +704,7 @@ std::string Timestamp::toString() const
 在 linux 中，“**一切皆文件**”，socket 也不例外，每个 socket 都和一个 fd（文件描述符，其实就是个 ID） 一一对应
 
 socket 的作用就是绑定 IP 地址、接发数据包
-#### Socket. h
+### Socket. h
 ```cpp
 #pragma once
 
@@ -763,7 +763,7 @@ private:
 };
 ```
 
-#### Socket.cc
+### Socket.cc
 ```cpp
 #include "Socket.h"
 
@@ -873,7 +873,7 @@ void Socket::setReuseAddr(bool on)
 在这里我们就能看出 RAII（Resource Acquisition Is Initialization，**资源获取即初始化**）原则，**将资源的生命周期与对象作绑定**，对象死了资源自动释放，构造函数中请求资源，析构函数中释放资源（C++在函数结束、抛出异常等情况保证能调用析构函数），防止了内存泄漏，不用再手动管理资源了
 
 这里面讲几个点：
-#### Ip 地址
+### Ip 地址
 在 linux 内核中，用 `strcut sockaddr` 来存储地址，这是个通用接口，长这样：
 ```cpp
 struct sockaddr {
@@ -916,7 +916,7 @@ void Socket::bindAddress(const InetAddress& localaddr)
 }
 ```
 
-### 🌟Channel 类
+## 🌟Channel 类
 每个 socket 都对应一个 Channel，Channel 选择监听哪些信息，但是 **Channel 本身不负责监听**，他只是列个表，然后由 Poller 监听 socket 是否传输了表中的内容。
 Poller 监听到之后，再汇报给 EventLoop，EventLoop 拿到 activeChannels 清单，对照着清单一一唤醒Channels
 Channel 被唤醒之后，再去叫别的类去进行接下来的操作
@@ -925,7 +925,7 @@ Channel 被唤醒之后，再去叫别的类去进行接下来的操作
 我们不直接拿 Channel 去监听 socket，因为这样的话，一万个 scoket 就对应一万个 Channel，每个 Channel 始终监视着 socket，会占用极大的内存
 我们用One Loop Per Thread（一个线程一个循环）原则，能让一个线程同时处理成千上万的链接
 
-#### Channel.h
+### Channel.h
 ```cpp
 #pragma once
 
@@ -1053,7 +1053,7 @@ private:
 };
 ```
 
-#### Channel.cc
+### Channel.cc
 ```cpp
 #include "Channel.h"
 
@@ -1170,7 +1170,7 @@ void Channel::handleEvent
 
 可以看出，**Channel 的作用就是设置自己需要响应的事件、响应事件**
 讲几个点：
-#### kReadEvent
+### kReadEvent
 其中 k 是 const 的缩写，代码中是这么定义的：
 ```cpp
 const int Channel::kNoneEvent = 0;
@@ -1192,9 +1192,9 @@ const int Channel::kWriteEvent = EPOLLOUT;
     void disableAll() { events_ = kNoneEvent; update(); }
 ```
 这样来添加或者删减 Channel 监听的类型
-#### update ()
+### update ()
 其实只需要明确一点就明白了：
 Channel 的 events 是自己想要监听的内容，但是需要把这个内容发给 Poller，由他来监听，自然需要 update 一下了
 
-### Poller 类
+## Poller 类
 
