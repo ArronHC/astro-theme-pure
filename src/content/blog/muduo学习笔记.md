@@ -920,8 +920,6 @@ void Socket::bindAddress(const InetAddress& localaddr)
 每个 socket 都对应一个 Channel，Channel 选择监听哪些信息，但是 **Channel 本身不负责监听**，他只是列个表，然后由 Poller 监听 socket 是否传输了表中的内容。
 Poller 监听到之后，再汇报给 EventLoop，EventLoop 拿到 activeChannels 清单，对照着清单一一唤醒Channels
 Channel 被唤醒之后，再去叫别的类去进行接下来的操作
-大概逻辑：
-![60748e52ab78bb72d6260966980f1790.jpg](https://blogppics.oss-cn-beijing.aliyuncs.com/blogpics/20251224163013497.png)
 我们不直接拿 Channel 去监听 socket，因为这样的话，一万个 scoket 就对应一万个 Channel，每个 Channel 始终监视着 socket，会占用极大的内存
 我们用One Loop Per Thread（一个线程一个循环）原则，能让一个线程同时处理成千上万的链接
 
@@ -1196,5 +1194,807 @@ const int Channel::kWriteEvent = EPOLLOUT;
 其实只需要明确一点就明白了：
 Channel 的 events 是自己想要监听的内容，但是需要把这个内容发给 Poller，由他来监听，自然需要 update 一下了
 
-## Poller 类
+## 🌟Poller 类、EpollPoller 类
+Poller 提供接口，EpollPoller 提供底层逻辑
+### 用处：
+1. 轮询（epoll_wait），直到有活动 channel，抓取到 `activeChannels` 列表，把当前事件传给每个 channel 的 `revents_`；唤醒 EventLoop，EventLoop 去让列表中的 channels 去 `handleEvent()`
+2. 维护 epoll 红黑树，其中维护的是 channel 的 fd、指针、愿望清单
+### Poller.h
+```cpp
+#pragma once
 
+  
+
+#include "NonCopyable.h"
+
+#include <vector>
+
+#include <unordered_map>
+
+  
+
+class Channel;
+
+class EventLoop;
+
+  
+
+class Poller : NonCopyable
+
+{
+
+public:
+
+    using ChannelList = std::vector<Channel*>;
+
+  
+
+    Poller(EventLoop* loop);
+
+    virtual ~Poller();
+
+  
+
+    //不停轮询，寻找active的channel
+
+    virtual void poll(int timeoutMs, ChannelList* activeChannel) = 0;
+
+  
+
+    //更新channel的愿望清单
+
+    virtual void updateChannel(Channel* channel) = 0;
+
+  
+
+    //移除channel
+
+    virtual void removeChannel(Channel* channel) = 0;
+
+  
+
+    //有没有这个Channel
+
+    bool hasChannel(Channel* channel) const;
+
+  
+
+    static Poller* newDefaultPoller(EventLoop* loop);
+
+  
+
+protected:
+
+    //维护Poller的监听channel都有哪些
+
+    //channel的fd和channel本身指针作对应
+
+    using ChannelMap = std::unordered_map<int, Channel*>;
+
+    ChannelMap channels_;//由Poller负责
+
+  
+
+private:
+
+    EventLoop* loop_;
+
+};
+
+/*
+
+Poller:
+
+1、维护监听的channel列表
+
+2、轮询，看哪些channel active了
+
+*/
+```
+
+### Poller.cc
+```cpp
+#include "Poller.h"
+
+#include "EpollPoller.h"
+
+#include "Channel.h"
+
+  
+
+Poller::Poller(EventLoop* loop)
+
+    : loop_(loop)
+
+{}
+
+  
+
+Poller::~Poller() = default;
+
+  
+
+bool Poller::hasChannel(Channel* channel) const
+
+{
+
+    auto it = channels_.find(channel->fd());
+
+    return it != channels_.end() && it->second == channel;
+
+}
+
+  
+
+Poller* Poller::newDefaultPoller(EventLoop* loop)
+
+{
+
+    return new EpollPoller(loop);
+
+}
+```
+
+### EpollPoller.h
+```cpp
+#pragma once
+
+  
+
+#include "Poller.h"
+
+#include <vector>
+
+#include <sys/epoll.h>
+
+  
+
+class EpollPoller : public Poller
+
+{
+
+public:
+
+    EpollPoller(EventLoop* loop);
+
+    ~EpollPoller() override;
+
+  
+
+    void poll(int timeoutMs, ChannelList* activeChannels) override;
+
+    void updateChannel(Channel* channel) override;
+
+    void removeChannel(Channel* channel) override;
+
+  
+
+private:
+
+    //填activeChannels
+
+    void fillActiveChannel(int numEvents, ChannelList* activeChannels) const;
+
+    //具体的在epoll中更新channel愿望清单的方式
+
+    void update(int operation, Channel* channel);
+
+  
+
+    int epollfd_;
+
+  
+
+    //即将发生事件的列表
+
+    using EventList = std::vector<struct epoll_event>;
+
+    EventList events_;
+
+  
+
+    //Channel在Poller中的状态
+
+    static const int kNew;//没有在红黑树注册过
+
+    static const int kAdded;//注册了，且在工作
+
+    static const int kDeleted;//注册了，但是没有在工作
+
+};
+
+  
+
+/*
+
+EpollPoller：
+
+使用epoll进行活跃channel的维护
+
+1、维护channel在epoll中的状态
+
+2、找到活跃的channel
+
+*/
+```
+
+### EpollPoller.cc
+```cpp
+#include "EpollPoller.h"
+
+#include "Channel.h"
+
+#include <iostream>
+
+#include <unistd.h>
+
+#include <string.h>
+
+  
+
+const int EpollPoller::kNew = -1;
+
+const int EpollPoller::kAdded = 1;
+
+const int EpollPoller::kDeleted = 2;
+
+  
+
+/*
+
+epoll是socket管理器，用的是红黑树
+
+每一个节点存了一份详细的监听清单，对应一个socket
+
+节点中有：
+
+1、节点信息，包含父子节点指针以及颜色(struct rb_node rbn)
+
+2、socket的fd以及对应的指针(struct epoll_filefd ffd)
+
+3、关注的事件，存用户关注的事件(struct epoll_event event)
+
+4、就绪链表指针，socket活跃时就把这个指针挂载到就绪链表中(struct list_head rdllink)
+
+5、等待队列项，这里面设置了回调函数，用来触发挂载到活跃链表的操作 (wait_queue_t pwq)
+
+6、容器引用，指向节点所属的epoll实例 (struct eventpoll *ep)
+
+*/
+
+  
+
+EpollPoller::EpollPoller(EventLoop* loop)
+
+    : Poller(loop),
+
+      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
+
+      events_(16)
+
+{
+
+    if(epollfd_ < 0)
+
+    {
+
+        perror("epoll_create1 error");
+
+    }
+
+}
+
+  
+  
+
+EpollPoller::~EpollPoller()
+
+{
+
+    ::close(epollfd_);
+
+}
+
+  
+
+//轮询的逻辑
+
+void EpollPoller::poll(int timeoutMs, ChannelList* activeChannels)
+
+{
+
+    //把epoll中的活跃socket填到events_，再返回活跃数量
+
+    //events_是using EventList = std::vector<struct epoll_event>类型的
+
+    int numEvents = ::epoll_wait(epollfd_,
+
+                                 &*events_.begin(),
+
+                                 static_cast<int>(events_.size()),
+
+                                 timeoutMs);
+
+    int saveErrno = errno;
+
+  
+
+    if(numEvents>0)
+
+    {
+
+        fillActiveChannel(numEvents, activeChannels);
+
+  
+
+        //已经把这个events_列表填满了
+
+        if(numEvents == static_cast<int>(events_.size()))
+
+        {
+
+            events_.resize(events_.size()*2);
+
+        }
+
+    }
+
+    else if(numEvents==0)
+
+    {
+
+        std::cout << "nothing happened" << std::endl;
+
+    }
+
+    else
+
+    {
+
+        //假如不是interrupt（自行暂停），那就是真出错了
+
+        if(saveErrno != EINTR)
+
+        {
+
+            perror("EpollPoller::poll Error!");
+
+        }
+
+    }
+
+}
+
+  
+
+//填充activeChannels，这些channels活跃了，要处理事件了
+
+void EpollPoller::fillActiveChannel(int numEvents, ChannelList* activeChannels) const
+
+{
+
+    for(int i=0;i<numEvents;i++)
+
+    {
+
+        Channel* channel = static_cast<Channel*>(events_[i].data.ptr);
+
+  
+
+        channel->set_revents(events_[i].events);
+
+  
+
+        activeChannels->push_back(channel);
+
+    }
+
+}
+
+  
+
+//把channel的清单更新同步到内核中（channel活跃了）
+
+void EpollPoller::updateChannel(Channel* channel)
+
+{
+
+    //看看状态是啥，怎么更新
+
+    const int index = channel->index();
+
+  
+
+    if(index==kNew||index==kDeleted)//epoll里没有这个channel，加进来
+
+    {
+
+        if(index==kNew)
+
+        {
+
+            int fd = channel->fd();
+
+            channels_[fd] = channel;
+
+        }
+
+  
+
+        channel->set_index(kAdded);
+
+        update(EPOLL_CTL_ADD, channel);
+
+    }
+
+    else//kAdded，有了，更新一下清单
+
+    {
+
+        if(channel->isNoneEvents())
+
+        {
+
+            update(EPOLL_CTL_DEL,channel);
+
+            channel->set_index(kDeleted);
+
+        }
+
+        else
+
+        {
+
+            update(EPOLL_CTL_MOD, channel);
+
+        }
+
+    }
+
+}
+
+  
+
+void EpollPoller::removeChannel(Channel* channel)
+
+{
+
+    int fd = channel->fd();
+
+    channels_.erase(fd);
+
+  
+
+    int index = channel->index();
+
+    if(index == kAdded)
+
+    {
+
+        update(EPOLL_CTL_DEL, channel);
+
+    }
+
+    //Channel被移除了，直接注销了
+
+    channel->set_index(kNew);
+
+}
+
+  
+
+//具体怎么更新？
+
+void EpollPoller::update(int operation, Channel* channel)
+
+{
+
+    //组装事件包
+
+    struct epoll_event event;
+
+    bzero(&event, sizeof event);
+
+  
+
+    event.events = channel->events();
+
+    event.data.ptr = channel;
+
+  
+
+    int fd = channel->fd();
+
+    //把愿望清单发给内核
+
+    if (::epoll_ctl(epollfd_, operation, fd, &event) < 0)
+
+    {
+
+        perror("epoll_ctl error");
+
+    }
+
+  
+
+}
+```
+
+## 🌟EventLoop 类
+这个类主要起到命令别的类的作用，操控者程序的主循环。被 Poller 唤醒，再让 Channel 处理事件；Channel 让 EventLoop 更新 Channel 自己的愿望清单，EventLoop 让 Poller 更新愿望清单
+### EventLoop.h
+```cpp
+#pragma once
+
+  
+
+#include <vector>
+
+#include <atomic>
+
+#include <memory>
+
+  
+
+#include "NonCopyable.h"
+
+#include "Timestamp.h"
+
+#include "CurrentThread.h"
+
+  
+
+class Channel;
+
+class Poller;
+
+  
+
+class EventLoop : NonCopyable
+
+{
+
+public:
+
+    using ChannelList = std::vector<Channel*>;
+
+  
+
+    EventLoop();
+
+    ~EventLoop();
+
+  
+
+    void loop();
+
+  
+
+    void quit();
+
+  
+
+    void updateChannel(Channel* channel);
+
+    void removeChannel(Channel* channel);
+
+    bool hasChannel(Channel* channel);
+
+  
+
+    bool isInLoopThread() const;
+
+  
+
+private:
+
+    void abortNotInLoopthread();
+
+  
+
+    std::atomic_bool looping_;
+
+    std::atomic_bool quit_;
+
+  
+
+    const pid_t threadId_;
+
+  
+
+    std::unique_ptr<Poller> poller_;
+
+    ChannelList activeChannels_;
+
+};
+```
+### EventLoop.cc
+```cpp
+#include "EventLoop.h"
+
+#include "Poller.h"
+
+#include "Channel.h"
+
+#include "CurrentThread.h"
+
+#include <iostream>
+
+  
+
+__thread EventLoop* t_loopInThisThread = nullptr;
+
+  
+
+const int kPollTimeMs = 100000;
+
+EventLoop::EventLoop()
+
+    : looping_(false),
+
+     quit_(false),
+
+     threadId_(CurrentThread::tid()),
+
+     poller_(Poller::newDefaultPoller(this))
+
+{
+
+    std::cout << "EventLoop created " << this << " in thread " << threadId_ << std::endl;
+
+  
+
+    if(t_loopInThisThread)
+
+    {
+
+        std::cerr << "Another EventLoop " << t_loopInThisThread
+
+                  << " exists in this thread " << threadId_ << std::endl;
+
+        exit(1); // 严禁一个线程搞两个 Loop
+
+    }
+
+    else
+
+    {
+
+        t_loopInThisThread = this;
+
+    }
+
+}
+
+  
+
+EventLoop::~EventLoop()
+
+{
+
+    looping_ = false;
+
+    t_loopInThisThread = nullptr;
+
+}
+
+  
+
+void EventLoop::loop()
+
+{
+
+    looping_ = true;
+
+    quit_ = false;
+
+  
+
+    std::cout << "EventLoop " << this << " start looping" << std::endl;
+
+  
+
+    while(!quit_)
+
+    {
+
+        activeChannels_.clear();
+
+  
+
+        poller_->poll(kPollTimeMs,&activeChannels_);
+
+  
+
+        for(Channel* channel : activeChannels_)
+
+        {
+
+            channel->handleEvent();
+
+        }
+
+    }
+
+  
+
+    std::cout << "EventLoop " << this << " stop looping" << std::endl;
+
+    looping_=false;
+
+}
+
+  
+
+void EventLoop::quit()
+
+{
+
+    quit_=true;
+
+}
+
+  
+
+void EventLoop::updateChannel(Channel* channel)
+
+{
+
+    if(isInLoopThread())
+
+    {
+
+        poller_->updateChannel(channel);
+
+    }
+
+    else
+
+    {
+
+        std::cerr << "EventLoop::updateChannel called from different thread!" << std::endl;
+
+    }
+
+}
+
+  
+
+void EventLoop::removeChannel(Channel* channel)
+
+{
+
+    if(isInLoopThread())
+
+    {
+
+        poller_->removeChannel(channel);
+
+    }
+
+}
+
+  
+
+bool EventLoop::hasChannel(Channel* channel)
+
+{
+
+    return poller_->hasChannel(channel);
+
+}
+
+  
+
+bool EventLoop::isInLoopThread() const
+
+{
+
+    return threadId_ == CurrentThread::tid();
+
+}
+```
+
+## 整体流程图：
+
+![6c9ad7879c4aad951aaa6a2a7541f2c0.jpg](https://blogppics.oss-cn-beijing.aliyuncs.com/blogpics/20251224222903743.png)
