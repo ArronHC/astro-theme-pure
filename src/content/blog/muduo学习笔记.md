@@ -708,165 +708,88 @@ socket 的作用就是绑定 IP 地址、接发数据包
 ```cpp
 #pragma once
 
-  
-
 #include "NonCopyable.h"
-
-  
 
 class InetAddress;
 
-  
-
 class Socket : NonCopyable
-
 {
-
 public:
+    explicit Socket(int sockfd)
+        : sockfd_(sockfd)
+    {}
 
-    explicit Socket(int sockfd)
+    ~Socket();
 
-        : sockfd_(sockfd)
+    int fd() const { return sockfd_; }
 
-    {}
+    void bindAddress(const InetAddress& localaddr);
 
-  
+    void listen();
 
-    ~Socket();
+    int accept(InetAddress* peeraddr);
 
-  
-
-    int fd() const { return sockfd_; }
-
-  
-
-    void bindAddress(const InetAddress& localaddr);
-
-  
-
-    void listen();
-
-  
-
-    int accept(InetAddress* peeraddr);
-
-  
-
-    void setReuseAddr(bool on);
-
-  
+    void setReuseAddr(bool on);
 
 private:
-
-    const int sockfd_;
-
+    const int sockfd_;
 };
 ```
 
 ### Socket.cc
 ```cpp
 #include "Socket.h"
-
 #include "InetAddress.h"
-
 #include <unistd.h>
-
 #include <sys/types.h>
-
 #include <sys/socket.h>
-
 #include <netinet/tcp.h>
 
-  
-
 Socket::~Socket()
-
 {
-
-    ::close(sockfd_);
-
+    ::close(sockfd_);
 }
-
-  
 
 void Socket::bindAddress(const InetAddress& localaddr)
-
 {
-
-    int ret = ::bind(sockfd_,
-
-                    (const struct sockaddr*)localaddr.getSockAddr(),
-
-                    sizeof(struct sockaddr_in));
-
-    if(ret<0)
-
-    {
-
-        perror("bind sockfd error!");
-
-    }
-
+    int ret = ::bind(sockfd_,
+                    (const struct sockaddr*)localaddr.getSockAddr(),
+                    sizeof(struct sockaddr_in));
+    if(ret<0)
+    {
+        perror("bind sockfd error!");
+    }
 }
-
-  
 
 void Socket::listen()
-
 {
-
-    int ret = ::listen(sockfd_, 1024);
-
-    if(ret<0)
-
-    {
-
-        perror("listen sockfd error!");
-
-    }
-
+    int ret = ::listen(sockfd_, 1024);
+    if(ret<0)
+    {
+        perror("listen sockfd error!");
+    }
 }
-
-  
 
 int Socket::accept(InetAddress* peeraddr)
-
 {
+    struct sockaddr_in addr;
+    socklen_t len = sizeof addr;
 
-    struct sockaddr_in addr;
+    int connfd = ::accept(sockfd_, (struct sockaddr*)&addr, &len);
 
-    socklen_t len = sizeof addr;
+    if(connfd >= 0)
+    {
+        peeraddr->setSockAddr(addr);
+    }
 
-  
-
-    int connfd = ::accept(sockfd_, (struct sockaddr*)&addr, &len);
-
-  
-
-    if(connfd >= 0)
-
-    {
-
-        peeraddr->setSockAddr(addr);
-
-    }
-
-  
-
-    return connfd;
-
+    return connfd;
 }
 
-  
-
 void Socket::setReuseAddr(bool on)
-
 {
-
-    int optval = on ? 1 : 0;
-
-    ::setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
-
+    int optval = on ? 1 : 0;
+    ::setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+    
 }
 ```
 
@@ -896,23 +819,14 @@ struct sockaddr_in {
 那么我们在设置 IP 的时候就这样：在 `sockaddr_in` 中设好参数，在强制类型转换成 `sockaddr` 供程序底层使用，也就有了这个代码：
 ```cpp
 void Socket::bindAddress(const InetAddress& localaddr)
-
 {
-//注意这里的类型转换
-    int ret = ::bind(sockfd_,
-
-                    (const struct sockaddr*)localaddr.getSockAddr(),
-
-                    sizeof(struct sockaddr_in));
-
-    if(ret<0)
-
-    {
-
-        perror("bind sockfd error!");
-
-    }
-
+    int ret = ::bind(sockfd_,
+                    (const struct sockaddr*)localaddr.getSockAddr(),
+                    sizeof(struct sockaddr_in));
+    if(ret<0)
+    {
+        perror("bind sockfd error!");
+    }
 }
 ```
 
@@ -927,241 +841,128 @@ Channel 被唤醒之后，再去叫别的类去进行接下来的操作
 ```cpp
 #pragma once
 
-  
-
 #include "NonCopyable.h"
-
 #include <functional>
-
 #include <memory>
-
-  
 
 class EventLoop;
 
-  
-
 class Channel : NonCopyable
-
 {
-
 public:
+    using EventCallback = std::function<void()>;
 
-    using EventCallback = std::function<void()>;
+    Channel(EventLoop* loop, int fd);
+    ~Channel();
 
-  
+    void handleEvent();
 
-    Channel(EventLoop* loop, int fd);
+    void setReadCallback(EventCallback cb) { readCallback_ = std::move(cb); }
+    void setWriteCallback(EventCallback cb) { writeCallback_ = std::move(cb); }
+    void setErrorCallback(EventCallback cb) { errorCallback_ = std::move(cb); }
+    void setCloseCallback(EventCallback cb) { closeCallback_ = std::move(cb); }
 
-    ~Channel();
 
-  
+    int index() { return index_; }
+    void set_index(int idx) { index_ = idx; }
 
-    void handleEvent();
+    int fd() const { return fd_; }
+    //获取我要关注的事件都有哪些
+    int events() const { return events_; }
 
-  
+    void set_revents(int revt) { revents_ = revt; }
 
-    void setReadCallback(EventCallback cb) { readCallback_ = std::move(cb); }
+    bool isNoneEvents() const { return events_ == kNoneEvent; }
 
-    void setWriteCallback(EventCallback cb) { writeCallback_ = std::move(cb); }
+    //自己更新，然后再让EventLoop去更新Poller
+    void enableReading() { events_ |= kReadEvent; update(); }
+    void disableReading() { events_ &= ~kReadEvent; update(); }
+    void enableWriting() { events_ |= kWriteEvent; update(); }
+    void disableWriting() { events_ &= ~kWriteEvent; update(); }
+    void disableAll() { events_ = kNoneEvent; update(); }
 
-    void setErrorCallback(EventCallback cb) { errorCallback_ = std::move(cb); }
-
-    void setCloseCallback(EventCallback cb) { closeCallback_ = std::move(cb); }
-
-  
-  
-
-    int index() { return index_; }
-
-    void set_index(int idx) { index_ = idx; }
-
-  
-
-    int fd() const { return fd_; }
-
-    int events() const { return events_; }
-
-  
-
-    void set_revents(int revt) { revents_ = revt; }
-
-  
-
-    bool isNoneEvents() const { return events_ == kNoneEvent; }
-
-  
-
-    void enableReading() { events_ |= kReadEvent; update(); }
-
-    void disableReading() { events &= ~kReadEvent; update(); }
-
-    void enableWriting() { events_ |= kWriteEvent; update(); }
-
-    void disableWriting() { events_ &= ~kWriteEvent; update(); }
-
-    void disableAll() { events_ = kNoneEvent; update(); }
-
-  
-
-    //你开启监听/写入了吗
-
-    bool isWriting() const { return events_ & kWriteEvent; }
-
-    bool isReading() const { return events_ & kReadEvent; }
-
-  
+    //你开启监听/写入了吗
+    bool isWriting() const { return events_ & kWriteEvent; }
+    bool isReading() const { return events_ & kReadEvent; }
 
 private:
+    void update();
 
-    void update();
+    static const int kNoneEvent;
+    static const int kReadEvent;
+    static const int kWriteEvent;
 
-  
+    EventLoop* loop_;
+    const int fd_;
 
-    static const int kNoneEvent;
+    int events_;
+    int revents_;
 
-    static const int kReadEvent;
+    //表示channel在Poller中的状态
+    int index_;
 
-    static const int kWriteEvent;
-
-  
-
-    EventLoop* loop_;
-
-    const int fd_;
-
-  
-
-    int events_;
-
-    int revents_;
-
-    int index_;
-
-  
-
-    EventCallback readCallback_;
-
-    EventCallback writeCallback_;
-
-    EventCallback errorCallback_;
-
-    EventCallback closeCallback_;
-
+    EventCallback readCallback_;
+    EventCallback writeCallback_;
+    EventCallback errorCallback_;
+    EventCallback closeCallback_;
 };
 ```
 
 ### Channel.cc
 ```cpp
 #include "Channel.h"
-
-#include "Eventloop.h"
-
-#include <sts/epoll.h>
-
+#include "EventLoop.h"
+#include <sys/epoll.h>
 #include <iostream>
 
-  
-
 const int Channel::kNoneEvent = 0;
-
 const int Channel::kReadEvent = EPOLLIN | EPOLLPRI;
-
 const int Channel::kWriteEvent = EPOLLOUT;
 
-  
-
 Channel::Channel(EventLoop* loop, int fd)
-
-    : loop_(loop),
-
-      fd_(fd),
-
-      events_(0),
-
-      revents_(0),
-
-      index_(-1),
-
-      tied_(false)
-
+    : loop_(loop),
+      fd_(fd),
+      events_(0),
+      revents_(0),
+      index_(-1)
 {}
 
-  
-
 Channel::~Channel()
-
 {
 
-  
-
 }
-
-  
 
 void Channel::update()
-
 {
+    loop_->updateChannel(this);
 
-    loop_->updateChannel(this);
-
-  
-
-    std::cout<<"Channel updated: fd="<< fd_ << " events="<<events_<<std::endl;
-
-  
+    std::cout<<"Channel updated: fd="<< fd_ << " events="<<events_<<std::endl;
 
 }
 
-  
-
-void Channel::handleEvent
-
+void Channel::handleEvent()
 {
+    std::cout << "Channel::handleEvent revents: " << revents_ << std::endl;
 
-    std::cout << "Channel::handleEvent revents: " << revents_ << std::endl;
+    if((revents_ & EPOLLHUP) && !(revents_ & EPOLLIN)) 
+    {
+        if(closeCallback_) closeCallback_();
+    }
 
-  
+    if(revents_ & EPOLLERR) 
+    {
+        if(errorCallback_) errorCallback_();
+    }
 
-    if((revents_ & EPOLLHUP) && !(revents_ & EPOLLIN))
+    if(revents_ & (EPOLLIN | EPOLLPRI)) 
+    {
+        if(readCallback_) readCallback_();
+    }
 
-    {
-
-        if(closeCallback_) closeCallback_();
-
-    }
-
-  
-
-    if(revents_ & EPOLLERR)
-
-    {
-
-        if(errorCallback_) errorCallback_();
-
-    }
-
-  
-
-    if(revents_ & (EPOLLIN | EPOLLPRI))
-
-    {
-
-        if(readCallback_) readCallback_();
-
-    }
-
-  
-
-    if(revents_ & EPOLLOUT)
-
-    {
-
-        if(writeCallback_) writeCallback_();
-
-    }
-
-  
+    if(revents_ & EPOLLOUT)
+    {
+        if(writeCallback_) writeCallback_();
+    }
 
 }
 ```
@@ -1203,135 +1004,72 @@ Poller 提供接口，EpollPoller 提供底层逻辑
 ```cpp
 #pragma once
 
-  
-
 #include "NonCopyable.h"
-
 #include <vector>
-
 #include <unordered_map>
 
-  
-
 class Channel;
-
 class EventLoop;
 
-  
-
 class Poller : NonCopyable
-
 {
-
 public:
+    using ChannelList = std::vector<Channel*>;
 
-    using ChannelList = std::vector<Channel*>;
+    Poller(EventLoop* loop);
+    virtual ~Poller();
 
-  
+    //不停轮询，寻找active的channel
+    virtual void poll(int timeoutMs, ChannelList* activeChannel) = 0;
 
-    Poller(EventLoop* loop);
+    //更新channel的愿望清单
+    virtual void updateChannel(Channel* channel) = 0;
 
-    virtual ~Poller();
+    //移除channel
+    virtual void removeChannel(Channel* channel) = 0;
 
-  
+    //有没有这个Channel
+    bool hasChannel(Channel* channel) const;
 
-    //不停轮询，寻找active的channel
-
-    virtual void poll(int timeoutMs, ChannelList* activeChannel) = 0;
-
-  
-
-    //更新channel的愿望清单
-
-    virtual void updateChannel(Channel* channel) = 0;
-
-  
-
-    //移除channel
-
-    virtual void removeChannel(Channel* channel) = 0;
-
-  
-
-    //有没有这个Channel
-
-    bool hasChannel(Channel* channel) const;
-
-  
-
-    static Poller* newDefaultPoller(EventLoop* loop);
-
-  
+    static Poller* newDefaultPoller(EventLoop* loop);
 
 protected:
-
-    //维护Poller的监听channel都有哪些
-
-    //channel的fd和channel本身指针作对应
-
-    using ChannelMap = std::unordered_map<int, Channel*>;
-
-    ChannelMap channels_;//由Poller负责
-
-  
+    //维护Poller的监听channel都有哪些
+    //channel的fd和channel本身指针作对应
+    using ChannelMap = std::unordered_map<int, Channel*>;
+    ChannelMap channels_;//由Poller负责
 
 private:
-
-    EventLoop* loop_;
-
+    EventLoop* loop_;
 };
-
 /*
-
 Poller:
-
 1、维护监听的channel列表
-
 2、轮询，看哪些channel active了
-
 */
 ```
 
 ### Poller.cc
 ```cpp
 #include "Poller.h"
-
 #include "EpollPoller.h"
-
 #include "Channel.h"
 
-  
-
 Poller::Poller(EventLoop* loop)
-
-    : loop_(loop)
-
+    : loop_(loop)
 {}
-
-  
 
 Poller::~Poller() = default;
 
-  
-
 bool Poller::hasChannel(Channel* channel) const
-
 {
-
-    auto it = channels_.find(channel->fd());
-
-    return it != channels_.end() && it->second == channel;
-
+    auto it = channels_.find(channel->fd());
+    return it != channels_.end() && it->second == channel;
 }
 
-  
-
 Poller* Poller::newDefaultPoller(EventLoop* loop)
-
 {
-
-    return new EpollPoller(loop);
-
+    return new EpollPoller(loop);
 }
 ```
 
@@ -1339,383 +1077,197 @@ Poller* Poller::newDefaultPoller(EventLoop* loop)
 ```cpp
 #pragma once
 
-  
-
 #include "Poller.h"
-
 #include <vector>
-
 #include <sys/epoll.h>
 
-  
-
 class EpollPoller : public Poller
-
 {
-
 public:
+    EpollPoller(EventLoop* loop);
+    ~EpollPoller() override;
 
-    EpollPoller(EventLoop* loop);
-
-    ~EpollPoller() override;
-
-  
-
-    void poll(int timeoutMs, ChannelList* activeChannels) override;
-
-    void updateChannel(Channel* channel) override;
-
-    void removeChannel(Channel* channel) override;
-
-  
+    void poll(int timeoutMs, ChannelList* activeChannels) override;
+    void updateChannel(Channel* channel) override;
+    void removeChannel(Channel* channel) override;
 
 private:
+    //填activeChannels
+    void fillActiveChannel(int numEvents, ChannelList* activeChannels) const;
+    //具体的在epoll中更新channel愿望清单的方式
+    void update(int operation, Channel* channel);
 
-    //填activeChannels
+    int epollfd_;
 
-    void fillActiveChannel(int numEvents, ChannelList* activeChannels) const;
+    //即将发生事件的列表
+    using EventList = std::vector<struct epoll_event>;
+    EventList events_;
 
-    //具体的在epoll中更新channel愿望清单的方式
-
-    void update(int operation, Channel* channel);
-
-  
-
-    int epollfd_;
-
-  
-
-    //即将发生事件的列表
-
-    using EventList = std::vector<struct epoll_event>;
-
-    EventList events_;
-
-  
-
-    //Channel在Poller中的状态
-
-    static const int kNew;//没有在红黑树注册过
-
-    static const int kAdded;//注册了，且在工作
-
-    static const int kDeleted;//注册了，但是没有在工作
-
+    //Channel在Poller中的状态
+    static const int kNew;//没有在红黑树注册过
+    static const int kAdded;//注册了，且在工作
+    static const int kDeleted;//注册了，但是没有在工作
 };
 
-  
-
 /*
-
 EpollPoller：
-
 使用epoll进行活跃channel的维护
-
 1、维护channel在epoll中的状态
-
 2、找到活跃的channel
-
 */
 ```
 
 ### EpollPoller.cc
 ```cpp
 #include "EpollPoller.h"
-
 #include "Channel.h"
-
 #include <iostream>
-
 #include <unistd.h>
-
 #include <string.h>
 
-  
-
 const int EpollPoller::kNew = -1;
-
 const int EpollPoller::kAdded = 1;
-
 const int EpollPoller::kDeleted = 2;
 
-  
-
 /*
-
 epoll是socket管理器，用的是红黑树
-
 每一个节点存了一份详细的监听清单，对应一个socket
-
 节点中有：
-
 1、节点信息，包含父子节点指针以及颜色(struct rb_node rbn)
-
 2、socket的fd以及对应的指针(struct epoll_filefd ffd)
-
 3、关注的事件，存用户关注的事件(struct epoll_event event)
-
 4、就绪链表指针，socket活跃时就把这个指针挂载到就绪链表中(struct list_head rdllink)
-
 5、等待队列项，这里面设置了回调函数，用来触发挂载到活跃链表的操作 (wait_queue_t pwq)
-
 6、容器引用，指向节点所属的epoll实例 (struct eventpoll *ep)
-
 */
 
-  
-
 EpollPoller::EpollPoller(EventLoop* loop)
-
-    : Poller(loop),
-
-      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
-
-      events_(16)
-
+    : Poller(loop),
+      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
+      events_(16)
 {
-
-    if(epollfd_ < 0)
-
-    {
-
-        perror("epoll_create1 error");
-
-    }
-
+    if(epollfd_ < 0)
+    {
+        perror("epoll_create1 error");
+    }
 }
 
-  
-  
 
 EpollPoller::~EpollPoller()
-
 {
-
-    ::close(epollfd_);
-
+    ::close(epollfd_);
 }
-
-  
 
 //轮询的逻辑
-
 void EpollPoller::poll(int timeoutMs, ChannelList* activeChannels)
-
 {
+    //把epoll中的活跃socket填到events_，再返回活跃数量
+    //events_是using EventList = std::vector<struct epoll_event>类型的
+    int numEvents = ::epoll_wait(epollfd_,
+                                 &*events_.begin(),
+                                 static_cast<int>(events_.size()),
+                                 timeoutMs);
+    
+    int saveErrno = errno;
 
-    //把epoll中的活跃socket填到events_，再返回活跃数量
+    if(numEvents>0)
+    {
+        fillActiveChannel(numEvents, activeChannels);
 
-    //events_是using EventList = std::vector<struct epoll_event>类型的
-
-    int numEvents = ::epoll_wait(epollfd_,
-
-                                 &*events_.begin(),
-
-                                 static_cast<int>(events_.size()),
-
-                                 timeoutMs);
-
-    int saveErrno = errno;
-
-  
-
-    if(numEvents>0)
-
-    {
-
-        fillActiveChannel(numEvents, activeChannels);
-
-  
-
-        //已经把这个events_列表填满了
-
-        if(numEvents == static_cast<int>(events_.size()))
-
-        {
-
-            events_.resize(events_.size()*2);
-
-        }
-
-    }
-
-    else if(numEvents==0)
-
-    {
-
-        std::cout << "nothing happened" << std::endl;
-
-    }
-
-    else
-
-    {
-
-        //假如不是interrupt（自行暂停），那就是真出错了
-
-        if(saveErrno != EINTR)
-
-        {
-
-            perror("EpollPoller::poll Error!");
-
-        }
-
-    }
-
+        //已经把这个events_列表填满了
+        if(numEvents == static_cast<int>(events_.size()))
+        {
+            events_.resize(events_.size()*2);
+        }
+    }
+    else if(numEvents==0)
+    {
+        std::cout << "nothing happened" << std::endl;
+    }
+    else 
+    {
+        //假如不是interrupt（自行暂停），那就是真出错了
+        if(saveErrno != EINTR)
+        {
+            perror("EpollPoller::poll Error!");
+        }
+    }
 }
-
-  
 
 //填充activeChannels，这些channels活跃了，要处理事件了
-
 void EpollPoller::fillActiveChannel(int numEvents, ChannelList* activeChannels) const
-
 {
+    for(int i=0;i<numEvents;i++)
+    {
+        Channel* channel = static_cast<Channel*>(events_[i].data.ptr);
 
-    for(int i=0;i<numEvents;i++)
+        channel->set_revents(events_[i].events);
 
-    {
-
-        Channel* channel = static_cast<Channel*>(events_[i].data.ptr);
-
-  
-
-        channel->set_revents(events_[i].events);
-
-  
-
-        activeChannels->push_back(channel);
-
-    }
-
+        activeChannels->push_back(channel);
+    }
 }
-
-  
 
 //把channel的清单更新同步到内核中（channel活跃了）
-
 void EpollPoller::updateChannel(Channel* channel)
-
 {
+    //看看状态是啥，怎么更新
+    const int index = channel->index();
 
-    //看看状态是啥，怎么更新
+    if(index==kNew||index==kDeleted)//epoll里没有这个channel，加进来
+    {
+        if(index==kNew)
+        {
+            int fd = channel->fd();
+            channels_[fd] = channel;
+        }
 
-    const int index = channel->index();
-
-  
-
-    if(index==kNew||index==kDeleted)//epoll里没有这个channel，加进来
-
-    {
-
-        if(index==kNew)
-
-        {
-
-            int fd = channel->fd();
-
-            channels_[fd] = channel;
-
-        }
-
-  
-
-        channel->set_index(kAdded);
-
-        update(EPOLL_CTL_ADD, channel);
-
-    }
-
-    else//kAdded，有了，更新一下清单
-
-    {
-
-        if(channel->isNoneEvents())
-
-        {
-
-            update(EPOLL_CTL_DEL,channel);
-
-            channel->set_index(kDeleted);
-
-        }
-
-        else
-
-        {
-
-            update(EPOLL_CTL_MOD, channel);
-
-        }
-
-    }
-
+        channel->set_index(kAdded);
+        update(EPOLL_CTL_ADD, channel);
+    }
+    else//kAdded，有了，更新一下清单
+    {
+        if(channel->isNoneEvents())
+        {
+            update(EPOLL_CTL_DEL,channel);
+            channel->set_index(kDeleted);
+        }
+        else 
+        {
+            update(EPOLL_CTL_MOD, channel);
+        }
+    }
 }
-
-  
 
 void EpollPoller::removeChannel(Channel* channel)
-
 {
+    int fd = channel->fd();
+    channels_.erase(fd);
 
-    int fd = channel->fd();
-
-    channels_.erase(fd);
-
-  
-
-    int index = channel->index();
-
-    if(index == kAdded)
-
-    {
-
-        update(EPOLL_CTL_DEL, channel);
-
-    }
-
-    //Channel被移除了，直接注销了
-
-    channel->set_index(kNew);
-
+    int index = channel->index();
+    if(index == kAdded)
+    {
+        update(EPOLL_CTL_DEL, channel);
+    }
+    //Channel被移除了，直接注销了
+    channel->set_index(kNew);
 }
 
-  
-
 //具体怎么更新？
-
 void EpollPoller::update(int operation, Channel* channel)
-
 {
+    //组装事件包
+    struct epoll_event event;
+    bzero(&event, sizeof event);
 
-    //组装事件包
+    event.events = channel->events();
+    event.data.ptr = channel;
 
-    struct epoll_event event;
-
-    bzero(&event, sizeof event);
-
-  
-
-    event.events = channel->events();
-
-    event.data.ptr = channel;
-
-  
-
-    int fd = channel->fd();
-
-    //把愿望清单发给内核
-
-    if (::epoll_ctl(epollfd_, operation, fd, &event) < 0)
-
-    {
-
-        perror("epoll_ctl error");
-
-    }
-
-  
+    int fd = channel->fd();
+    //把愿望清单发给内核
+    if (::epoll_ctl(epollfd_, operation, fd, &event) < 0)
+    {
+        perror("epoll_ctl error");
+    }
 
 }
 ```
@@ -1726,272 +1278,140 @@ void EpollPoller::update(int operation, Channel* channel)
 ```cpp
 #pragma once
 
-  
-
 #include <vector>
-
 #include <atomic>
-
 #include <memory>
 
-  
-
 #include "NonCopyable.h"
-
 #include "Timestamp.h"
-
 #include "CurrentThread.h"
 
-  
-
 class Channel;
-
 class Poller;
 
-  
-
 class EventLoop : NonCopyable
-
 {
-
 public:
+    using ChannelList = std::vector<Channel*>;
 
-    using ChannelList = std::vector<Channel*>;
+    EventLoop();
+    ~EventLoop();
 
-  
+    void loop();
 
-    EventLoop();
+    void quit();
 
-    ~EventLoop();
+    void updateChannel(Channel* channel);
+    void removeChannel(Channel* channel);
+    bool hasChannel(Channel* channel);
 
-  
-
-    void loop();
-
-  
-
-    void quit();
-
-  
-
-    void updateChannel(Channel* channel);
-
-    void removeChannel(Channel* channel);
-
-    bool hasChannel(Channel* channel);
-
-  
-
-    bool isInLoopThread() const;
-
-  
+    bool isInLoopThread() const;
 
 private:
+    void abortNotInLoopthread();
 
-    void abortNotInLoopthread();
+    std::atomic_bool looping_;
+    std::atomic_bool quit_;
 
-  
+    const pid_t threadId_;
 
-    std::atomic_bool looping_;
-
-    std::atomic_bool quit_;
-
-  
-
-    const pid_t threadId_;
-
-  
-
-    std::unique_ptr<Poller> poller_;
-
-    ChannelList activeChannels_;
-
+    std::unique_ptr<Poller> poller_;
+    ChannelList activeChannels_;
 };
 ```
 ### EventLoop.cc
 ```cpp
 #include "EventLoop.h"
-
 #include "Poller.h"
-
 #include "Channel.h"
-
 #include "CurrentThread.h"
-
 #include <iostream>
-
-  
 
 __thread EventLoop* t_loopInThisThread = nullptr;
 
-  
-
 const int kPollTimeMs = 100000;
-
 EventLoop::EventLoop()
-
-    : looping_(false),
-
-     quit_(false),
-
-     threadId_(CurrentThread::tid()),
-
-     poller_(Poller::newDefaultPoller(this))
-
+    : looping_(false),
+     quit_(false),
+     threadId_(CurrentThread::tid()),
+     poller_(Poller::newDefaultPoller(this))
 {
+    std::cout << "EventLoop created " << this << " in thread " << threadId_ << std::endl;
 
-    std::cout << "EventLoop created " << this << " in thread " << threadId_ << std::endl;
-
-  
-
-    if(t_loopInThisThread)
-
-    {
-
-        std::cerr << "Another EventLoop " << t_loopInThisThread
-
-                  << " exists in this thread " << threadId_ << std::endl;
-
-        exit(1); // 严禁一个线程搞两个 Loop
-
-    }
-
-    else
-
-    {
-
-        t_loopInThisThread = this;
-
-    }
-
+    if(t_loopInThisThread)
+    {
+        std::cerr << "Another EventLoop " << t_loopInThisThread 
+                  << " exists in this thread " << threadId_ << std::endl;
+        exit(1); // 严禁一个线程搞两个 Loop
+    }
+    else 
+    {
+        t_loopInThisThread = this;
+    }
 }
-
-  
 
 EventLoop::~EventLoop()
-
 {
-
-    looping_ = false;
-
-    t_loopInThisThread = nullptr;
-
+    looping_ = false;
+    t_loopInThisThread = nullptr;
 }
-
-  
 
 void EventLoop::loop()
-
 {
+    looping_ = true;
+    quit_ = false;
 
-    looping_ = true;
+    std::cout << "EventLoop " << this << " start looping" << std::endl;
 
-    quit_ = false;
+    while(!quit_)
+    {
+        activeChannels_.clear();
 
-  
+        poller_->poll(kPollTimeMs,&activeChannels_);
 
-    std::cout << "EventLoop " << this << " start looping" << std::endl;
+        for(Channel* channel : activeChannels_)
+        {
+            channel->handleEvent();
+        }
+    }
 
-  
-
-    while(!quit_)
-
-    {
-
-        activeChannels_.clear();
-
-  
-
-        poller_->poll(kPollTimeMs,&activeChannels_);
-
-  
-
-        for(Channel* channel : activeChannels_)
-
-        {
-
-            channel->handleEvent();
-
-        }
-
-    }
-
-  
-
-    std::cout << "EventLoop " << this << " stop looping" << std::endl;
-
-    looping_=false;
-
+    std::cout << "EventLoop " << this << " stop looping" << std::endl;
+    looping_=false;
 }
-
-  
 
 void EventLoop::quit()
-
 {
-
-    quit_=true;
-
+    quit_=true;
 }
-
-  
 
 void EventLoop::updateChannel(Channel* channel)
-
 {
-
-    if(isInLoopThread())
-
-    {
-
-        poller_->updateChannel(channel);
-
-    }
-
-    else
-
-    {
-
-        std::cerr << "EventLoop::updateChannel called from different thread!" << std::endl;
-
-    }
-
+    if(isInLoopThread())
+    {
+        poller_->updateChannel(channel);
+    }
+    else 
+    {
+        std::cerr << "EventLoop::updateChannel called from different thread!" << std::endl;
+    }
 }
-
-  
 
 void EventLoop::removeChannel(Channel* channel)
-
 {
-
-    if(isInLoopThread())
-
-    {
-
-        poller_->removeChannel(channel);
-
-    }
-
+    if(isInLoopThread())
+    {
+        poller_->removeChannel(channel);
+    }
 }
-
-  
 
 bool EventLoop::hasChannel(Channel* channel)
-
 {
-
-    return poller_->hasChannel(channel);
-
+    return poller_->hasChannel(channel);
 }
 
-  
-
 bool EventLoop::isInLoopThread() const
-
 {
-
-    return threadId_ == CurrentThread::tid();
-
+    return threadId_ == CurrentThread::tid();
 }
 ```
 
