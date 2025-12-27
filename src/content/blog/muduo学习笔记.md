@@ -422,37 +422,21 @@ int num = static_cast<int>(pi); // 去掉小数部分，变为 3
 ### Noncopyable. h
 ```cpp
 #pragma once
-
 /*
-
 NonCopyable类
-
 所有继承了这个类的类都无法被拷贝
-
 */
-
 class NonCopyable
-
 {
-
 public:
-
-    //删除拷贝构造函数
-
-    NonCopyable(const NonCopyable&) = delete;
-
-    //删除复制运算符
-
-    NonCopyable& operator=(const NonCopyable&) = delete;
-
-  
+    //删除拷贝构造函数
+    NonCopyable(const NonCopyable&) = delete;
+    //删除复制运算符
+    NonCopyable& operator=(const NonCopyable&) = delete;
 
 protected:
-
-    NonCopyable() = default;
-
-    ~NonCopyable() = default;
-
+    NonCopyable() = default;
+    ~NonCopyable() = default;
 };
 ```
 
@@ -466,131 +450,71 @@ protected:
 ```cpp
 #pragma once
 
-  
-
 #include <arpa/inet.h>
-
 #include <netinet/in.h>
-
 #include <string>
 
-  
-
 class InetAddress
-
 {
-
 public:
+    explicit InetAddress(uint16_t port, std::string ip = "127.0.0.1");
 
-    explicit InetAddress(uint16_t port, std::string ip = "127.0.0.1");
+    explicit InetAddress(const struct sockaddr_in& addr)
+        : addr_(addr)
+    {}
 
-  
+    void setSockAddr(const struct sockaddr_in& addr) { addr_ = addr; }
+    
+    std::string toIp() const;
 
-    explicit InetAddress(const struct sockaddr_in& addr)
+    std::string toIpPort() const;
 
-        : addr_(addr)
+    uint16_t toPort() const;
 
-    {}
-
-  
-
-    void setSockAddr(const struct sockaddr_in& addr) { addr_ = addr; }
-
-    std::string toIp() const;
-
-  
-
-    std::string toIpPort() const;
-
-  
-
-    uint16_t toPort() const;
-
-  
-
-    const struct sockaddr_in* getSockAddr() const { return &addr_; }
-
-  
+    const struct sockaddr_in* getSockAddr() const { return &addr_; }
 
 private:
-
-    struct sockaddr_in addr_;
-
+    struct sockaddr_in addr_;
 };
 ```
 
 ### InetAddress.cc
 ```cpp
 #include "InetAddress.h"
-
 #include <strings.h>
-
 #include <string.h>
 
-  
-
 InetAddress::InetAddress(uint16_t port, std::string ip)
-
 {
+    bzero(&addr_, sizeof addr_);
 
-    bzero(&addr_, sizeof addr_);
+    addr_.sin_family = AF_INET;
 
-  
+    addr_.sin_port = htons(port);
 
-    addr_.sin_family = AF_INET;
-
-  
-
-    addr_.sin_port = htons(port);
-
-  
-
-    inet_pton(AF_INET, ip.c_str(), &addr_.sin_addr.s_addr);
-
+    inet_pton(AF_INET, ip.c_str(), &addr_.sin_addr.s_addr);
 }
-
-  
 
 std::string InetAddress::toIp() const
-
 {
-
-    char buf[64] = {0};
-
-    ::inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof buf);
-
-    return buf;
-
+    char buf[64] = {0};
+    ::inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof buf);
+    return buf;
 }
-
-  
 
 std::string InetAddress::toIpPort() const
-
 {
-
-    char buf[64] = {0};
-
-    ::inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof buf);
-
-    size_t end = strlen(buf);
-
-    uint16_t port = ntohs(addr_.sin_port);
-
-    sprintf(buf+end, ":%u", port);
-
-    return buf;
-
+    char buf[64] = {0};
+    ::inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof buf);
+    size_t end = strlen(buf);
+    uint16_t port = ntohs(addr_.sin_port);
+    sprintf(buf+end, ":%u", port);
+    return buf;
 }
 
-  
-
 uint16_t InetAddress::toPort() const
-
 {
-
-    return ntohs(addr_.sin_port);
-
+    return ntohs(addr_.sin_port);
 }
 ```
 
@@ -602,94 +526,53 @@ uint16_t InetAddress::toPort() const
 ### Timestamp.h
 ```cpp
 #pragma once
-
 #include <iostream>
-
 #include <string>
 
-  
-
-class Timestamp
-
+class Timestamp 
 {
-
 public:
-
-    Timestamp();
-
-    explicit Timestamp(int64_t microSecondsSinceEpoch);
-
-    static Timestamp now();
-
-    std::string toString() const;
-
-    int64_t microSecondsSinceEpoch() const { return microSecondsSinceEpoch_;}
-
-  
+    Timestamp();
+    explicit Timestamp(int64_t microSecondsSinceEpoch);
+    static Timestamp now();
+    std::string toString() const;
+    int64_t microSecondsSinceEpoch() const { return microSecondsSinceEpoch_;}
 
 private:
-
-    int64_t microSecondsSinceEpoch_;
-
+    int64_t microSecondsSinceEpoch_;
 };
 ```
 ### Timestamp.cc
 ```cpp
 #include "Timestamp.h"
-
 #include <time.h>
-
-  
 
 Timestamp::Timestamp() : microSecondsSinceEpoch_(0) {}
 
-  
-
 Timestamp::Timestamp(int64_t microSecondsSinceEpoch)
-
-    : microSecondsSinceEpoch_(microSecondsSinceEpoch)
-
+    : microSecondsSinceEpoch_(microSecondsSinceEpoch)
 {}
 
-  
-
 Timestamp Timestamp::now()
-
 {
-
-    return Timestamp(time(NULL));
-
+    return Timestamp(time(NULL));
 }
-
-  
 
 std::string Timestamp::toString() const
-
 {
-
-    char buf[128] = {0};
-
-    time_t seconds = static_cast<time_t>(microSecondsSinceEpoch_);
-
-    struct tm *tm_time = localtime(&seconds);
-
-    snprintf(buf, sizeof(buf), "%4d/%02d/%02d %02d:%02d:%02d",
-
-             tm_time->tm_year + 1900,
-
-             tm_time->tm_mon + 1,
-
-             tm_time->tm_mday,
-
-             tm_time->tm_hour,
-
-             tm_time->tm_min,
-
-             tm_time->tm_sec);
-
-    return buf;
-
+    char buf[128] = {0};
+    time_t seconds = static_cast<time_t>(microSecondsSinceEpoch_);
+    struct tm *tm_time = localtime(&seconds);
+    snprintf(buf, sizeof(buf), "%4d/%02d/%02d %02d:%02d:%02d",
+             tm_time->tm_year + 1900,
+             tm_time->tm_mon + 1,
+             tm_time->tm_mday,
+             tm_time->tm_hour,
+             tm_time->tm_min,
+             tm_time->tm_sec);
+    return buf;
 }
+
 ```
 
 同样是直接调用就好了，简化代码用的。
